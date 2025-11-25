@@ -1,0 +1,14 @@
+Lesson(
+    id: 2,
+    lesson_type: Prose,
+    language: "en-US",
+    title: "英文进阶 - 完整句子",
+    description: "练习完整的英文句子",
+    source_text: "Practice makes perfect. The journey of a thousand miles begins with a single step.",
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["英文", "句子", "谚语"],
+        estimated_time: (90, 0),
+        prerequisite_ids: [1],
+    ),
+)

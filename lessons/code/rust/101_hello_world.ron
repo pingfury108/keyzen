@@ -1,0 +1,14 @@
+Lesson(
+    id: 101,
+    lesson_type: Code,
+    language: "rust",
+    title: "Rust 基础 - Hello World",
+    description: "练习最简单的 Rust 程序",
+    source_text: "fn main() {\n    println!(\"Hello, world!\");\n}",
+    meta: LessonMeta(
+        difficulty: Beginner,
+        tags: ["rust", "基础", "函数"],
+        estimated_time: (60, 0),
+        prerequisite_ids: [],
+    ),
+)

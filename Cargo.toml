@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/keyzen_core",
+    "crates/keyzen_data",
+    "crates/keyzen_engine",
+    "crates/keyzen_ui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Keyzen Contributors"]
+
+[workspace.dependencies]
+# 共享依赖
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.8"
+anyhow = "1.0"
+chrono = "0.4"
+
+# 内部 crate
+keyzen_core = { path = "crates/keyzen_core" }
+keyzen_data = { path = "crates/keyzen_data" }
+keyzen_engine = { path = "crates/keyzen_engine" }

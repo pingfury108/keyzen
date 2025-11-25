@@ -47,13 +47,41 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### 运行项目
 
-```bash
-# 编译所有 crates
-cargo build --workspace
+Keyzen 提供**两个版本**：
 
-# 运行终端版 Keyzen
-cargo run --bin keyzen
+#### 🖥️ TUI 版本（终端界面）
+
+```bash
+# 编译 TUI 版本
+cargo build --bin keyzen-tui
+
+# 运行 TUI 版本
+cargo run --bin keyzen-tui
+# 或
+./target/debug/keyzen-tui
 ```
+
+**特点**：
+- 轻量级，适合终端用户
+- 基于 Ratatui 框架
+- 跨平台兼容性好
+
+#### 🎨 GUI 版本（图形界面）
+
+```bash
+# 编译 GUI 版本（需要较长时间，GPUI 依赖较大）
+cargo build --bin keyzen-gui
+
+# 运行 GUI 版本
+cargo run --bin keyzen-gui
+# 或
+./target/debug/keyzen-gui
+```
+
+**特点**：
+- 极致流畅（120 FPS+）
+- 基于 GPUI（Zed 编辑器底层框架）
+- 现代化图形界面
 
 ### 项目结构
 
@@ -65,7 +93,8 @@ keyzen/
 │   ├── keyzen_core/          # 核心类型定义
 │   ├── keyzen_data/          # 课程数据加载
 │   ├── keyzen_engine/        # 打字逻辑引擎
-│   └── keyzen_ui/            # 用户界面
+│   ├── keyzen_tui/           # TUI 终端界面
+│   └── keyzen_gui/           # GUI 图形界面
 └── lessons/                   # 课程文件（RON 格式）
     ├── english/              # 英文课程
     └── code/rust/            # Rust 代码课程

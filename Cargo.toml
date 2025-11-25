@@ -3,7 +3,8 @@ members = [
     "crates/keyzen_core",
     "crates/keyzen_data",
     "crates/keyzen_engine",
-    "crates/keyzen_ui",
+    "crates/keyzen_tui",
+    "crates/keyzen_gui",
 ]
 resolver = "2"
 

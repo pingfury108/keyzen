@@ -32,6 +32,14 @@ impl SessionModel {
     }
 
     fn handle_keystroke(&mut self, key: &str, cx: &mut ModelContext<Self>) {
+        // 处理退格键
+        if key == "backspace" {
+            self.session.handle_keystroke('\u{0008}');
+            cx.notify();
+            return;
+        }
+
+        // 处理普通字符
         if let Some(ch) = key.chars().next() {
             self.session.handle_keystroke(ch);
             cx.notify();
@@ -48,6 +56,11 @@ impl SessionModel {
 
     fn get_snapshot(&self) -> keyzen_engine::SessionSnapshot {
         self.session.get_snapshot()
+    }
+
+    fn is_completed(&self) -> bool {
+        let snapshot = self.session.get_snapshot();
+        snapshot.progress >= 1.0
     }
 }
 
@@ -80,6 +93,16 @@ impl KeyzenApp {
         cx.notify();
     }
 
+    fn restart_lesson(&mut self, cx: &mut ViewContext<Self>) {
+        if let Some(lesson_index) = self.selected_lesson {
+            if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
+                self.session = Some(cx.new_model(|cx| SessionModel::new(lesson, cx)));
+                cx.focus(&self.focus_handle);
+                cx.notify();
+            }
+        }
+    }
+
     fn render_lesson_list(&self, cx: &mut ViewContext<Self>) -> Div {
         div()
             .flex()
@@ -93,41 +116,42 @@ impl KeyzenApp {
                     .text_size(px(20.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(0xF0F0F0))
-                    .child("选择课程")
+                    .child("选择课程"),
             )
-            .children(
-                self.lessons.iter().enumerate().map(|(i, lesson)| {
-                    let lesson_index = i;
-                    div()
-                        .p_4()
-                        .bg(rgb(0x2A2A2A))
-                        .hover(|style| style.bg(rgb(0x3A3A3A)))
-                        .rounded(px(12.0))
-                        .cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, _event, cx| {
+            .children(self.lessons.iter().enumerate().map(|(i, lesson)| {
+                let lesson_index = i;
+                div()
+                    .p_4()
+                    .bg(rgb(0x2A2A2A))
+                    .hover(|style| style.bg(rgb(0x3A3A3A)))
+                    .rounded(px(12.0))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event, cx| {
                             this.start_lesson(lesson_index, cx);
-                        }))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .text_size(px(16.0))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0xF0F0F0))
-                                        .child(format!("{}. {}", i + 1, lesson.title))
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(14.0))
-                                        .text_color(rgb(0xA0A0A0))
-                                        .child(lesson.description.clone())
-                                )
-                        )
-                })
-            )
+                        }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(0xF0F0F0))
+                                    .child(format!("{}. {}", i + 1, lesson.title)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(rgb(0xA0A0A0))
+                                    .child(lesson.description.clone()),
+                            ),
+                    )
+            }))
     }
 
     fn render_practice_area(&self, session: &SessionModel) -> Div {
@@ -137,11 +161,28 @@ impl KeyzenApp {
         let target_chars: Vec<char> = target_text.chars().collect();
         let input_chars: Vec<char> = input_text.chars().collect();
 
+        // 获取当前课程名称
+        let lesson_title = self
+            .selected_lesson
+            .and_then(|idx| self.lessons.get(idx))
+            .map(|lesson| lesson.title.clone())
+            .unwrap_or_default();
+
         div()
             .flex()
             .flex_col()
             .gap_8()
             .w(px(800.0))
+            .child(
+                // 课程名称
+                div()
+                    .flex()
+                    .justify_center()
+                    .text_size(px(18.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(0xF0F0F0))
+                    .child(lesson_title),
+            )
             .child(
                 div()
                     .flex()
@@ -153,54 +194,45 @@ impl KeyzenApp {
                     .child("|")
                     .child(format!("准确率: {:.1}%", snapshot.accuracy * 100.0))
                     .child("|")
-                    .child(format!("进度: {:.0}%", snapshot.progress * 100.0))
+                    .child(format!("进度: {:.0}%", snapshot.progress * 100.0)),
             )
             .child(
-                div()
-                    .p_12()
-                    .bg(rgb(0x2A2A2A))
-                    .rounded(px(16.0))
-                    .child(
-                        div()
-                            .font_family("JetBrains Mono")
-                            .text_size(px(24.0))
-                            .line_height(relative(1.6))
-                            .flex()
-                            .flex_row()
-                            .flex_wrap()
-                            .children(
-                                target_chars.iter().enumerate().map(|(i, &target_char)| {
-                                    let (color, bg_color) = if i < input_chars.len() {
-                                        let input_char = input_chars[i];
-                                        if input_char == target_char {
-                                            (rgb(0xF0F0F0), None)
-                                        } else {
-                                            (rgb(0xFF9966), Some(rgb(0x2A2520)))
-                                        }
-                                    } else if i == input_chars.len() {
-                                        (rgb(0x000000), Some(rgb(0x00C2B8)))
-                                    } else {
-                                        (rgb(0xA0A0A0), None)
-                                    };
+                div().p_12().bg(rgb(0x2A2A2A)).rounded(px(16.0)).child(
+                    div()
+                        .font_family("JetBrains Mono")
+                        .text_size(px(24.0))
+                        .line_height(px(36.0))
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
+                            let (color, bg_color) = if i < input_chars.len() {
+                                let input_char = input_chars[i];
+                                if input_char == target_char {
+                                    (rgb(0xF0F0F0), None)
+                                } else {
+                                    (rgb(0xFF9966), Some(rgb(0x2A2520)))
+                                }
+                            } else if i == input_chars.len() {
+                                (rgb(0x000000), Some(rgb(0x00C2B8)))
+                            } else {
+                                (rgb(0xA0A0A0), None)
+                            };
 
-                                    let display_char = if target_char == ' ' {
-                                        '_'
-                                    } else {
-                                        target_char
-                                    };
+                            let mut char_div = div()
+                                .h(px(36.0))
+                                .flex()
+                                .items_center()
+                                .text_color(color)
+                                .child(target_char.to_string());
 
-                                    let mut char_div = div()
-                                        .text_color(color)
-                                        .child(display_char.to_string());
+                            if let Some(bg) = bg_color {
+                                char_div = char_div.bg(bg);
+                            }
 
-                                    if let Some(bg) = bg_color {
-                                        char_div = char_div.bg(bg);
-                                    }
-
-                                    char_div
-                                })
-                            )
-                    )
+                            char_div
+                        })),
+                ),
             )
             .child(
                 div()
@@ -208,7 +240,146 @@ impl KeyzenApp {
                     .justify_center()
                     .text_xs()
                     .text_color(rgb(0x666666))
-                    .child("按 Esc 返回课程列表")
+                    .child("按 Esc 返回课程列表"),
+            )
+    }
+
+    fn render_completion_stats(
+        &self,
+        snapshot: keyzen_engine::SessionSnapshot,
+        cx: &mut ViewContext<Self>,
+    ) -> Div {
+        // 获取当前课程名称
+        let lesson_title = self
+            .selected_lesson
+            .and_then(|idx| self.lessons.get(idx))
+            .map(|lesson| lesson.title.clone())
+            .unwrap_or_default();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_8()
+            .w(px(600.0))
+            .child(
+                // 完成标题
+                div()
+                    .flex()
+                    .justify_center()
+                    .text_size(px(28.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(0x00C2B8))
+                    .child("课程完成！"),
+            )
+            .child(
+                // 课程名称
+                div()
+                    .flex()
+                    .justify_center()
+                    .text_size(px(18.0))
+                    .text_color(rgb(0xF0F0F0))
+                    .child(lesson_title),
+            )
+            .child(
+                // 统计数据卡片
+                div().p_8().bg(rgb(0x2A2A2A)).rounded(px(12.0)).child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_6()
+                        .child(
+                            // WPM
+                            div()
+                                .flex()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .text_color(rgb(0xA0A0A0))
+                                        .child("速度 (WPM)"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(24.0))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(rgb(0xF0F0F0))
+                                        .child(format!("{:.0}", snapshot.current_wpm)),
+                                ),
+                        )
+                        .child(
+                            // 准确率
+                            div()
+                                .flex()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .text_color(rgb(0xA0A0A0))
+                                        .child("准确率"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(24.0))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(rgb(0xF0F0F0))
+                                        .child(format!("{:.1}%", snapshot.accuracy * 100.0)),
+                                ),
+                        ),
+                ),
+            )
+            .child(
+                // 操作按钮
+                div()
+                    .flex()
+                    .gap_4()
+                    .justify_center()
+                    .child(
+                        div()
+                            .px_6()
+                            .py_3()
+                            .bg(rgb(0x00C2B8))
+                            .hover(|style| style.bg(rgb(0x00A89F)))
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, cx| {
+                                    this.restart_lesson(cx);
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(0x000000))
+                                    .child("重新练习"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .px_6()
+                            .py_3()
+                            .bg(rgb(0x2A2A2A))
+                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, cx| {
+                                    this.session = None;
+                                    this.selected_lesson = None;
+                                    cx.focus(&this.focus_handle);
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(0xF0F0F0))
+                                    .child("返回课程列表"),
+                            ),
+                    ),
             )
     }
 }
@@ -225,8 +396,14 @@ impl Render for KeyzenApp {
         }
 
         let content = if let Some(session) = &self.session {
-            let session_ref = session.read(cx);
-            self.render_practice_area(session_ref)
+            let is_completed = session.read(cx).is_completed();
+            if is_completed {
+                let snapshot = session.read(cx).get_snapshot();
+                self.render_completion_stats(snapshot, cx)
+            } else {
+                let session_ref = session.read(cx);
+                self.render_practice_area(session_ref)
+            }
         } else {
             self.render_lesson_list(cx)
         };
@@ -244,25 +421,45 @@ impl Render for KeyzenApp {
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, cx| {
                 if let Some(session) = &this.session {
                     let key = event.keystroke.key.as_str();
-                    session.update(cx, |session, cx| {
-                        session.handle_keystroke(key, cx);
-                    });
+
+                    // 处理特殊功能键
+                    match key {
+                        "backspace" => {
+                            session.update(cx, |session, cx| {
+                                session.handle_keystroke("backspace", cx);
+                            });
+                            return;
+                        }
+                        "enter" => {
+                            session.update(cx, |session, cx| {
+                                session.handle_keystroke("\n", cx);
+                            });
+                            return;
+                        }
+                        "tab" => {
+                            session.update(cx, |session, cx| {
+                                session.handle_keystroke("\t", cx);
+                            });
+                            return;
+                        }
+                        "space" => {
+                            session.update(cx, |session, cx| {
+                                session.handle_keystroke(" ", cx);
+                            });
+                            return;
+                        }
+                        _ => {}
+                    }
+
+                    // 处理普通可打印字符（使用 key_char 以支持大小写和特殊符号）
+                    if let Some(key_char) = &event.keystroke.key_char {
+                        session.update(cx, |session, cx| {
+                            session.handle_keystroke(key_char, cx);
+                        });
+                    }
                 }
             }))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap_4()
-                    .child(
-                        div()
-                            .text_xl()
-                            .text_color(rgb(0x00C2B8))
-                            .child("KEYZEN - 键禅")
-                    )
-                    .child(content)
-            )
+            .child(content)
     }
 }
 
@@ -284,9 +481,7 @@ fn main() {
         // 创建应用菜单
         cx.set_menus(vec![Menu {
             name: "Keyzen".into(),
-            items: vec![
-                MenuItem::action("退出", Quit),
-            ],
+            items: vec![MenuItem::action("退出", Quit)],
         }]);
 
         // 打开窗口

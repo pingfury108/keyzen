@@ -1,3 +1,4 @@
+use anyhow::Result;
 use keyzen_core::*;
 use keyzen_data::LessonLoader;
 use keyzen_engine::TypingSession;
@@ -14,7 +15,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
-use anyhow::Result;
 use std::io;
 use std::sync::mpsc;
 
@@ -86,7 +86,11 @@ impl App {
 
         // Logo
         let logo = Paragraph::new("KEYZEN - 键禅")
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         frame.render_widget(logo, chunks[0]);
@@ -130,7 +134,9 @@ impl App {
                     Style::default().fg(Color::White)
                 } else {
                     // 错误
-                    Style::default().fg(Color::Red).add_modifier(Modifier::UNDERLINED)
+                    Style::default()
+                        .fg(Color::Red)
+                        .add_modifier(Modifier::UNDERLINED)
                 }
             } else if i == input_chars.len() {
                 // 当前位置（光标）
@@ -215,14 +221,12 @@ impl App {
                 Style::default().fg(Color::DarkGray),
             )));
 
-            let completion = Paragraph::new(lines)
-                .alignment(Alignment::Center)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("完成")
-                        .title_alignment(Alignment::Center),
-                );
+            let completion = Paragraph::new(lines).alignment(Alignment::Center).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("完成")
+                    .title_alignment(Alignment::Center),
+            );
             frame.render_widget(completion, area);
         }
     }

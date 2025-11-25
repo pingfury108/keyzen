@@ -1,7 +1,7 @@
 use keyzen_core::*;
-use std::collections::{HashSet, VecDeque, HashMap};
-use std::time::{Instant, Duration};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 pub struct TypingSession {
     // 课程数据
@@ -293,7 +293,7 @@ pub struct SessionSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use keyzen_core::{LessonMeta, Difficulty};
+    use keyzen_core::{Difficulty, LessonMeta};
 
     fn create_test_lesson() -> Lesson {
         Lesson {

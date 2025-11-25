@@ -43,9 +43,9 @@ pub struct Lesson {
 /// 输入模式
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum InputMode {
-    Strict,      // 必须纠正错误
-    Forgiving,   // 标记错误但可继续（默认）
-    Invisible,   // 不显示错误（盲打）
+    Strict,    // 必须纠正错误
+    Forgiving, // 标记错误但可继续（默认）
+    Invisible, // 不显示错误（盲打）
 }
 
 impl Default for InputMode {

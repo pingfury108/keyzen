@@ -1,7 +1,7 @@
-use keyzen_core::{Lesson, LessonType};
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use keyzen_core::{Lesson, LessonType};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct LessonLoader {
     lessons_dir: PathBuf,
@@ -30,8 +30,8 @@ impl LessonLoader {
             return Ok(());
         }
 
-        for entry in fs::read_dir(dir)
-            .with_context(|| format!("Failed to read directory: {:?}", dir))?
+        for entry in
+            fs::read_dir(dir).with_context(|| format!("Failed to read directory: {:?}", dir))?
         {
             let entry = entry?;
             let path = entry.path();

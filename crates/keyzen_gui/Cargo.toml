@@ -15,6 +15,6 @@ keyzen_data.workspace = true
 anyhow.workspace = true
 
 # GPUI - Zed 的 UI 框架
-gpui = { git = "https://github.com/zed-industries/zed", rev = "v0.164.2" }
+gpui = "0.2"
 
 [build-dependencies]

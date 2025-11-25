@@ -9,7 +9,7 @@ use std::sync::mpsc;
 actions!(keyzen, [Quit, BackToList]);
 
 struct KeyzenApp {
-    session: Option<Model<SessionModel>>,
+    session: Option<Entity<SessionModel>>,
     lessons: Vec<Lesson>,
     selected_lesson: Option<usize>,
     focus_handle: FocusHandle,
@@ -21,7 +21,7 @@ struct SessionModel {
 }
 
 impl SessionModel {
-    fn new(lesson: Lesson, _cx: &mut ModelContext<Self>) -> Self {
+    fn new(lesson: Lesson, _cx: &mut Context<Self>) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let session = TypingSession::new(lesson, PracticeMode::Zen, Some(event_tx));
 
@@ -31,7 +31,7 @@ impl SessionModel {
         }
     }
 
-    fn handle_keystroke(&mut self, key: &str, cx: &mut ModelContext<Self>) {
+    fn handle_keystroke(&mut self, key: &str, cx: &mut Context<Self>) {
         // 处理退格键
         if key == "backspace" {
             self.session.handle_keystroke('\u{0008}');
@@ -65,7 +65,7 @@ impl SessionModel {
 }
 
 impl KeyzenApp {
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(cx: &mut Context<Self>) -> Self {
         let loader = LessonLoader::new("./lessons");
         let lessons = loader.load_all().unwrap_or_default();
 
@@ -77,33 +77,33 @@ impl KeyzenApp {
         }
     }
 
-    fn start_lesson(&mut self, lesson_index: usize, cx: &mut ViewContext<Self>) {
+    fn start_lesson(&mut self, lesson_index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
-            self.session = Some(cx.new_model(|cx| SessionModel::new(lesson, cx)));
+            self.session = Some(cx.new(|cx| SessionModel::new(lesson, cx)));
             self.selected_lesson = Some(lesson_index);
-            cx.focus(&self.focus_handle);
+            self.focus_handle.focus(window);
             cx.notify();
         }
     }
 
-    fn back_to_list(&mut self, _: &BackToList, cx: &mut ViewContext<Self>) {
+    fn back_to_list(&mut self, _: &BackToList, window: &mut Window, cx: &mut Context<Self>) {
         self.session = None;
         self.selected_lesson = None;
-        cx.focus(&self.focus_handle);
+        self.focus_handle.focus(window);
         cx.notify();
     }
 
-    fn restart_lesson(&mut self, cx: &mut ViewContext<Self>) {
+    fn restart_lesson(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(lesson_index) = self.selected_lesson {
             if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
-                self.session = Some(cx.new_model(|cx| SessionModel::new(lesson, cx)));
-                cx.focus(&self.focus_handle);
+                self.session = Some(cx.new(|cx| SessionModel::new(lesson, cx)));
+                self.focus_handle.focus(window);
                 cx.notify();
             }
         }
     }
 
-    fn render_lesson_list(&self, cx: &mut ViewContext<Self>) -> Div {
+    fn render_lesson_list(&self, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .flex_col()
@@ -128,8 +128,8 @@ impl KeyzenApp {
                     .cursor_pointer()
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(move |this, _event, cx| {
-                            this.start_lesson(lesson_index, cx);
+                        cx.listener(move |this, _event, window, cx| {
+                            this.start_lesson(lesson_index, window, cx);
                         }),
                     )
                     .child(
@@ -247,7 +247,7 @@ impl KeyzenApp {
     fn render_completion_stats(
         &self,
         snapshot: keyzen_engine::SessionSnapshot,
-        cx: &mut ViewContext<Self>,
+        cx: &mut Context<Self>,
     ) -> Div {
         // 获取当前课程名称
         let lesson_title = self
@@ -343,8 +343,8 @@ impl KeyzenApp {
                             .cursor_pointer()
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(|this, _event, cx| {
-                                    this.restart_lesson(cx);
+                                cx.listener(|this, _event, window, cx| {
+                                    this.restart_lesson(window, cx);
                                 }),
                             )
                             .child(
@@ -365,10 +365,10 @@ impl KeyzenApp {
                             .cursor_pointer()
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(|this, _event, cx| {
+                                cx.listener(|this, _event, window, cx| {
                                     this.session = None;
                                     this.selected_lesson = None;
-                                    cx.focus(&this.focus_handle);
+                                    this.focus_handle.focus(window);
                                     cx.notify();
                                 }),
                             )
@@ -385,7 +385,7 @@ impl KeyzenApp {
 }
 
 impl Render for KeyzenApp {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 订阅 session 的变化
         if let Some(session) = &self.session {
             let session_clone = session.clone();
@@ -418,7 +418,7 @@ impl Render for KeyzenApp {
             .track_focus(&self.focus_handle)
             .key_context("KeyzenApp")
             .on_action(cx.listener(Self::back_to_list))
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, cx| {
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 if let Some(session) = &this.session {
                     let key = event.keystroke.key.as_str();
 
@@ -463,12 +463,12 @@ impl Render for KeyzenApp {
     }
 }
 
-fn quit(_: &Quit, cx: &mut AppContext) {
+fn quit(_: &Quit, cx: &mut App) {
     cx.quit();
 }
 
 fn main() {
-    App::new().run(|cx: &mut AppContext| {
+    Application::new().run(|cx: &mut App| {
         // 绑定快捷键
         cx.bind_keys([
             KeyBinding::new("escape", BackToList, Some("KeyzenApp")),
@@ -497,14 +497,14 @@ fn main() {
                     }),
                     ..Default::default()
                 },
-                |cx| cx.new_view(|cx| KeyzenApp::new(cx)),
+                |_, cx| cx.new(|cx| KeyzenApp::new(cx)),
             )
             .unwrap();
 
         // 设置焦点并激活应用
         window
-            .update(cx, |view, cx| {
-                cx.focus(&view.focus_handle);
+            .update(cx, |view, window, cx| {
+                view.focus_handle.focus(window);
                 cx.activate(true);
             })
             .unwrap();

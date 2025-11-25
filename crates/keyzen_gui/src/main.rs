@@ -1,8 +1,8 @@
+use gpui::prelude::*;
 use gpui::*;
 use keyzen_core::*;
 use keyzen_data::LessonLoader;
 use keyzen_engine::TypingSession;
-use anyhow::Result;
 use std::sync::mpsc;
 
 struct KeyzenApp {
@@ -17,7 +17,7 @@ struct SessionModel {
 }
 
 impl SessionModel {
-    fn new(lesson: Lesson, cx: &mut ModelContext<Self>) -> Self {
+    fn new(lesson: Lesson, _cx: &mut ModelContext<Self>) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let session = TypingSession::new(lesson, PracticeMode::Zen, Some(event_tx));
 
@@ -49,7 +49,7 @@ impl SessionModel {
 }
 
 impl KeyzenApp {
-    fn new(cx: &mut AppContext) -> Self {
+    fn new(_cx: &mut AppContext) -> Self {
         // 加载课程
         let loader = LessonLoader::new("./lessons");
         let lessons = loader.load_all().unwrap_or_default();
@@ -71,6 +71,13 @@ impl KeyzenApp {
 
 impl Render for KeyzenApp {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        let content = if let Some(session_model) = &self.session {
+            let session_ref = session_model.read(cx);
+            self.render_practice_area(session_ref)
+        } else {
+            self.render_lesson_list(cx)
+        };
+
         div()
             .flex()
             .flex_col()
@@ -91,19 +98,13 @@ impl Render for KeyzenApp {
                             .text_color(rgb(0x00C2B8))
                             .child("KEYZEN - 键禅")
                     )
-                    .child(
-                        if let Some(session_model) = &self.session {
-                            self.render_practice_area(session_model.read(cx), cx)
-                        } else {
-                            self.render_lesson_list(cx)
-                        }
-                    )
+                    .child(content)
             )
     }
 }
 
 impl KeyzenApp {
-    fn render_lesson_list(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render_lesson_list(&self, cx: &mut ViewContext<Self>) -> Div {
         div()
             .flex()
             .flex_col()
@@ -116,18 +117,16 @@ impl KeyzenApp {
             )
             .children(
                 self.lessons.iter().enumerate().map(|(i, lesson)| {
+                    let lesson_index = i;
                     div()
                         .p_2()
                         .bg(rgb(0x2A2A2A))
                         .hover(|style| style.bg(rgb(0x3A3A3A)))
                         .rounded_md()
                         .cursor_pointer()
-                        .on_click({
-                            let lesson_index = i;
-                            cx.listener(move |this, _event, cx| {
-                                this.start_lesson(lesson_index, cx);
-                            })
-                        })
+                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, _event, cx| {
+                            this.start_lesson(lesson_index, cx);
+                        }))
                         .child(
                             div()
                                 .text_color(rgb(0xF0F0F0))
@@ -140,8 +139,7 @@ impl KeyzenApp {
     fn render_practice_area(
         &self,
         session: &SessionModel,
-        cx: &mut ViewContext<Self>,
-    ) -> impl IntoElement {
+    ) -> Div {
         let snapshot = session.get_snapshot();
         let target_text = session.get_target_text();
         let input_text = session.get_input_text();
@@ -175,6 +173,8 @@ impl KeyzenApp {
                         div()
                             .font_family("JetBrains Mono")
                             .text_2xl()
+                            .flex()
+                            .flex_row()
                             .children(
                                 target_chars.iter().enumerate().map(|(i, &target_char)| {
                                     let color = if i < input_chars.len() {
@@ -197,7 +197,6 @@ impl KeyzenApp {
                                     };
 
                                     div()
-                                        .inline()
                                         .text_color(color)
                                         .when(i == input_chars.len(), |style| {
                                             style.bg(rgb(0x00C2B8)).text_color(rgb(0x000000))
@@ -226,7 +225,22 @@ fn main() {
 
         cx.bind_keys([KeyBinding::new("escape", Quit, None)]);
 
-        cx.open_window(WindowOptions::default(), |cx| {
+        // 居中显示窗口
+        let window_options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None, // 自动检测主屏幕
+                size(px(900.0), px(650.0)),
+                cx,
+            ))),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Keyzen - 键禅".into()),
+                appears_transparent: false,
+                traffic_light_position: None,
+            }),
+            ..Default::default()
+        };
+
+        cx.open_window(window_options, |cx| {
             let app = KeyzenApp::new(cx);
             cx.new_view(|_cx| app)
         })

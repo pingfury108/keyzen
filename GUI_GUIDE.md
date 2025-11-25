@@ -9,12 +9,14 @@ Keyzen 现在支持两个独立的用户界面：
 - **特点**：轻量、快速、跨平台
 - **适用**：终端用户、服务器环境、远程开发
 - **构建**：`cargo build --bin keyzen-tui`
+- **运行**：`./target/debug/keyzen-tui`
 
-### 2. GUI 版本（keyzen-gui）
+### 2. GUI 版本（keyzen，默认）
 - **框架**：GPUI (Zed Editor 底层框架)
 - **特点**：120 FPS+、GPU 加速、现代化界面
 - **适用**：桌面用户、追求极致体验
-- **构建**：`cargo build --bin keyzen-gui`
+- **构建**：`cargo build`（默认）
+- **运行**：`./target/debug/keyzen` 或 `cargo run`
 
 ## GPUI 配置说明
 
@@ -22,8 +24,21 @@ Keyzen 现在支持两个独立的用户界面：
 
 #### macOS
 ```bash
-# 需要 Xcode Command Line Tools
-xcode-select --install
+# ⚠️ 重要：GPUI 需要完整的 Xcode，不能只安装 Command Line Tools
+
+# 1. 从 Apple Developer 下载 Xcode
+# https://developer.apple.com/download/all/
+# 推荐版本：Xcode 15.x（适配 macOS 14 Sonoma）
+
+# 2. 安装后设置为默认开发工具
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# 3. 接受许可
+sudo xcodebuild -license accept
+
+# 4. 验证 Metal 编译器
+which metal
+# 应输出: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal
 ```
 
 #### Linux

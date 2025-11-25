@@ -478,6 +478,14 @@ fn main() {
         // 注册退出动作
         cx.on_action(quit);
 
+        // 监听窗口关闭事件：当窗口关闭时退出应用
+        cx.on_window_closed(|cx| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+
         // 创建应用菜单
         cx.set_menus(vec![Menu {
             name: "Keyzen".into(),

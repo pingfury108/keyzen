@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="circleBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2a2a2a;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00E5CC;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00A89F;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 添加 10% 的内边距，图标内容缩放到 80% -->
+  <g transform="translate(102.4, 102.4) scale(0.8)">
+    <!-- 背景 -->
+    <rect width="1024" height="1024" rx="226" fill="url(#circleBg)"/>
+
+    <!-- 外圈 -->
+    <circle cx="512" cy="512" r="380" fill="none" stroke="url(#ring)" stroke-width="20"/>
+
+    <!-- 内圈 -->
+    <circle cx="512" cy="512" r="320" fill="none" stroke="url(#ring)" stroke-width="12" opacity="0.6"/>
+
+    <!-- K 字母 - 简洁线条 -->
+    <g stroke="url(#ring)" stroke-width="48" stroke-linecap="round" fill="none">
+      <line x1="420" y1="380" x2="420" y2="644"/>
+      <line x1="420" y1="512" x2="580" y2="380"/>
+      <line x1="420" y1="512" x2="580" y2="644"/>
+    </g>
+  </g>
+</svg>

@@ -8,6 +8,16 @@ license.workspace = true
 name = "keyzen"
 path = "src/main.rs"
 
+[package.metadata.bundle]
+name = "Keyzen"
+identifier = "keyzen.pingfury.top"
+icon = ["resources/macos/keyzen.icns"]
+version = "0.1.0"
+copyright = "Copyright © 2024 pingfury"
+category = "Education"
+short_description = "键禅 - 打字练习工具"
+long_description = "Keyzen 是一个优雅的打字练习工具，帮助你提升打字速度和准确率"
+
 [dependencies]
 keyzen_core.workspace = true
 keyzen_engine.workspace = true

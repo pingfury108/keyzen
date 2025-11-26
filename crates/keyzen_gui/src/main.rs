@@ -214,33 +214,33 @@ impl KeyzenApp {
                             .flex_row()
                             .flex_wrap()
                             .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
-                            let (color, bg_color) = if i < input_chars.len() {
-                                let input_char = input_chars[i];
-                                if input_char == target_char {
-                                    (rgb(0xF0F0F0), None)
+                                let (color, bg_color) = if i < input_chars.len() {
+                                    let input_char = input_chars[i];
+                                    if input_char == target_char {
+                                        (rgb(0xF0F0F0), None)
+                                    } else {
+                                        (rgb(0xFF9966), Some(rgb(0x2A2520)))
+                                    }
+                                } else if i == input_chars.len() {
+                                    (rgb(0x000000), Some(rgb(0x00C2B8)))
                                 } else {
-                                    (rgb(0xFF9966), Some(rgb(0x2A2520)))
+                                    (rgb(0xA0A0A0), None)
+                                };
+
+                                let mut char_div = div()
+                                    .h(px(36.0))
+                                    .flex()
+                                    .items_center()
+                                    .text_color(color)
+                                    .child(target_char.to_string());
+
+                                if let Some(bg) = bg_color {
+                                    char_div = char_div.bg(bg);
                                 }
-                            } else if i == input_chars.len() {
-                                (rgb(0x000000), Some(rgb(0x00C2B8)))
-                            } else {
-                                (rgb(0xA0A0A0), None)
-                            };
 
-                            let mut char_div = div()
-                                .h(px(36.0))
-                                .flex()
-                                .items_center()
-                                .text_color(color)
-                                .child(target_char.to_string());
-
-                            if let Some(bg) = bg_color {
-                                char_div = char_div.bg(bg);
-                            }
-
-                            char_div
-                        })),
-                ),
+                                char_div
+                            })),
+                    ),
             )
             .child(
                 div()
@@ -297,51 +297,51 @@ impl KeyzenApp {
                     .bg(rgb(0x2A2A2A))
                     .rounded(px(12.0))
                     .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_6()
-                        .child(
-                            // WPM
-                            div()
-                                .w_full()
-                                .flex()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(16.0))
-                                        .text_color(rgb(0xA0A0A0))
-                                        .child("速度 (WPM)"),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(24.0))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(rgb(0xF0F0F0))
-                                        .child(format!("{:.0}", snapshot.current_wpm)),
-                                ),
-                        )
-                        .child(
-                            // 准确率
-                            div()
-                                .w_full()
-                                .flex()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(16.0))
-                                        .text_color(rgb(0xA0A0A0))
-                                        .child("准确率"),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(24.0))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(rgb(0xF0F0F0))
-                                        .child(format!("{:.1}%", snapshot.accuracy * 100.0)),
-                                ),
-                        ),
-                ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_6()
+                            .child(
+                                // WPM
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("速度 (WPM)"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xF0F0F0))
+                                            .child(format!("{:.0}", snapshot.current_wpm)),
+                                    ),
+                            )
+                            .child(
+                                // 准确率
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("准确率"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xF0F0F0))
+                                            .child(format!("{:.1}%", snapshot.accuracy * 100.0)),
+                                    ),
+                            ),
+                    ),
             )
             .child(
                 // 操作按钮
@@ -515,6 +515,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(600.0), px(500.0))),
+                    app_id: Some("keyzen.pingfury.top".to_string()),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Keyzen - 键禅".into()),
                         appears_transparent: false,

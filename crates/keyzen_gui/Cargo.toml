@@ -22,7 +22,9 @@ long_description = "Keyzen 是一个优雅的打字练习工具，帮助你提�
 keyzen_core.workspace = true
 keyzen_engine.workspace = true
 keyzen_data.workspace = true
+keyzen_persistence = { path = "../keyzen_persistence" }
 anyhow.workspace = true
+chrono.workspace = true
 
 # GPUI - Zed 的 UI 框架
 gpui = "0.2"

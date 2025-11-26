@@ -3,16 +3,19 @@ use gpui::*;
 use keyzen_core::*;
 use keyzen_data::LessonLoader;
 use keyzen_engine::TypingSession;
-use std::sync::mpsc;
+use keyzen_persistence::Database;
+use std::sync::{mpsc, Arc};
 
 // 定义 Actions
-actions!(keyzen, [Quit, BackToList]);
+actions!(keyzen, [Quit, BackToList, ShowHistory]);
 
 struct KeyzenApp {
     session: Option<Entity<SessionModel>>,
     lessons: Vec<Lesson>,
     selected_lesson: Option<usize>,
     focus_handle: FocusHandle,
+    database: Arc<Database>,
+    show_history: bool,
 }
 
 struct SessionModel {
@@ -69,11 +72,22 @@ impl KeyzenApp {
         let loader = LessonLoader::new("./lessons");
         let lessons = loader.load_all().unwrap_or_default();
 
+        // 初始化数据库
+        let database = Arc::new(
+            Database::default()
+                .unwrap_or_else(|e| {
+                    eprintln!("警告: 无法创建数据库: {}", e);
+                    Database::new(":memory:").expect("无法创建内存数据库")
+                })
+        );
+
         Self {
             session: None,
             lessons,
             selected_lesson: None,
             focus_handle: cx.focus_handle(),
+            database,
+            show_history: false,
         }
     }
 
@@ -87,8 +101,25 @@ impl KeyzenApp {
     }
 
     fn back_to_list(&mut self, _: &BackToList, window: &mut Window, cx: &mut Context<Self>) {
+        // 在清除 session 前保存数据
+        if let Some(session) = &self.session {
+            let db = self.database.clone();
+            session.update(cx, |session_model, _cx| {
+                if let Err(e) = session_model.session.save_to_database(&db) {
+                    eprintln!("保存会话数据失败: {}", e);
+                }
+            });
+        }
+
         self.session = None;
         self.selected_lesson = None;
+        self.show_history = false;
+        self.focus_handle.focus(window);
+        cx.notify();
+    }
+
+    fn show_history(&mut self, _: &ShowHistory, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_history = !self.show_history;
         self.focus_handle.focus(window);
         cx.notify();
     }
@@ -113,11 +144,36 @@ impl KeyzenApp {
             .child(
                 div()
                     .flex()
-                    .justify_center()
-                    .text_size(px(20.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(0xF0F0F0))
-                    .child("选择课程"),
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(20.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(0xF0F0F0))
+                            .child("选择课程"),
+                    )
+                    .child(
+                        div()
+                            .px_4()
+                            .py_2()
+                            .bg(rgb(0x2A2A2A))
+                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.show_history(&ShowHistory, window, cx);
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(rgb(0x00C2B8))
+                                    .child("查看历史记录"),
+                            ),
+                    ),
             )
             .children(self.lessons.iter().enumerate().map(|(i, lesson)| {
                 let lesson_index = i;
@@ -153,6 +209,251 @@ impl KeyzenApp {
                             ),
                     )
             }))
+    }
+
+    fn render_history_view(&self, cx: &mut Context<Self>) -> Div {
+        // 获取最近 10 条练习记录
+        let sessions = self.database.get_recent_sessions(10).unwrap_or_default();
+        let overall_stats = self.database.get_overall_stats().unwrap_or_else(|_| {
+            keyzen_persistence::OverallStats {
+                total_sessions: 0,
+                total_keystrokes: 0,
+                avg_wpm: 0.0,
+                max_wpm: 0.0,
+                avg_accuracy: 0.0,
+            }
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .w_full()
+            .px_8()
+            .child(
+                // 标题栏
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(20.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(0xF0F0F0))
+                            .child("练习历史"),
+                    )
+                    .child(
+                        div()
+                            .px_4()
+                            .py_2()
+                            .bg(rgb(0x2A2A2A))
+                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.show_history(&ShowHistory, window, cx);
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(rgb(0x00C2B8))
+                                    .child("返回课程列表"),
+                            ),
+                    ),
+            )
+            .child(
+                // 总体统计卡片
+                div()
+                    .w_full()
+                    .p_6()
+                    .bg(rgb(0x2A2A2A))
+                    .rounded(px(12.0))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_around()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("总练习次数"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xF0F0F0))
+                                            .child(format!("{}", overall_stats.total_sessions)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("平均速度"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xF0F0F0))
+                                            .child(format!("{:.0} WPM", overall_stats.avg_wpm)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("最高速度"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0x00C2B8))
+                                            .child(format!("{:.0} WPM", overall_stats.max_wpm)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xA0A0A0))
+                                            .child("平均准确率"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(24.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xF0F0F0))
+                                            .child(format!("{:.1}%", overall_stats.avg_accuracy * 100.0)),
+                                    ),
+                            ),
+                    ),
+            )
+            .child(
+                // 最近练习记录标题
+                div()
+                    .text_size(px(16.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(0xF0F0F0))
+                    .child("最近练习"),
+            )
+            .children(if sessions.is_empty() {
+                vec![div()
+                    .p_8()
+                    .flex()
+                    .justify_center()
+                    .text_color(rgb(0x666666))
+                    .child("暂无练习记录")]
+            } else {
+                sessions
+                    .into_iter()
+                    .map(|record| {
+                        // 格式化时间
+                        let datetime = chrono::DateTime::from_timestamp(record.completed_at, 0)
+                            .unwrap_or_else(|| chrono::Utc::now());
+                        let time_str = datetime.format("%Y-%m-%d %H:%M").to_string();
+
+                        div()
+                            .p_4()
+                            .bg(rgb(0x2A2A2A))
+                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .rounded(px(12.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_2()
+                                            .child(
+                                                div()
+                                                    .text_size(px(16.0))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(rgb(0xF0F0F0))
+                                                    .child(record.lesson_title),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(rgb(0x666666))
+                                                    .child(time_str),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .gap_6()
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .items_end()
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(14.0))
+                                                            .text_color(rgb(0xA0A0A0))
+                                                            .child("速度"),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(18.0))
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .text_color(rgb(0x00C2B8))
+                                                            .child(format!("{:.0}", record.wpm)),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .items_end()
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(14.0))
+                                                            .text_color(rgb(0xA0A0A0))
+                                                            .child("准确率"),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(18.0))
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .text_color(rgb(0xF0F0F0))
+                                                            .child(format!("{:.1}%", record.accuracy * 100.0)),
+                                                    ),
+                                            ),
+                                    ),
+                            )
+                    })
+                    .collect()
+            })
     }
 
     fn render_practice_area(&self, session: &SessionModel) -> Div {
@@ -360,6 +661,15 @@ impl KeyzenApp {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, window, cx| {
+                                    // 在重新开始前保存数据
+                                    if let Some(session) = &this.session {
+                                        let db = this.database.clone();
+                                        session.update(cx, |session_model, _cx| {
+                                            if let Err(e) = session_model.session.save_to_database(&db) {
+                                                eprintln!("保存会话数据失败: {}", e);
+                                            }
+                                        });
+                                    }
                                     this.restart_lesson(window, cx);
                                 }),
                             )
@@ -382,6 +692,16 @@ impl KeyzenApp {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, window, cx| {
+                                    // 在清除 session 前保存数据
+                                    if let Some(session) = &this.session {
+                                        let db = this.database.clone();
+                                        session.update(cx, |session_model, _cx| {
+                                            if let Err(e) = session_model.session.save_to_database(&db) {
+                                                eprintln!("保存会话数据失败: {}", e);
+                                            }
+                                        });
+                                    }
+
                                     this.session = None;
                                     this.selected_lesson = None;
                                     this.focus_handle.focus(window);
@@ -420,6 +740,8 @@ impl Render for KeyzenApp {
                 let session_ref = session.read(cx);
                 self.render_practice_area(session_ref)
             }
+        } else if self.show_history {
+            self.render_history_view(cx)
         } else {
             self.render_lesson_list(cx)
         };
@@ -434,6 +756,7 @@ impl Render for KeyzenApp {
             .track_focus(&self.focus_handle)
             .key_context("KeyzenApp")
             .on_action(cx.listener(Self::back_to_list))
+            .on_action(cx.listener(Self::show_history))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 if let Some(session) = &this.session {
                     let key = event.keystroke.key.as_str();
@@ -488,6 +811,7 @@ fn main() {
         // 绑定快捷键
         cx.bind_keys([
             KeyBinding::new("escape", BackToList, Some("KeyzenApp")),
+            KeyBinding::new("cmd-h", ShowHistory, Some("KeyzenApp")),
             KeyBinding::new("cmd-q", Quit, None),
         ]);
 

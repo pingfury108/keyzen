@@ -4,7 +4,7 @@ members = [
     "crates/keyzen_data",
     "crates/keyzen_engine",
     "crates/keyzen_tui",
-    "crates/keyzen_gui",
+    "crates/keyzen_gui", "crates/keyzen_persistence",
 ]
 resolver = "2"
 default-members = ["crates/keyzen_gui"]

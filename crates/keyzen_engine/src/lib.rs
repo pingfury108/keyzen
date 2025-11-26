@@ -3,6 +3,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "persistence")]
+use keyzen_persistence::Database;
+
 pub struct TypingSession {
     // 课程数据
     lesson: Lesson,
@@ -277,6 +280,19 @@ impl TypingSession {
         if let Some(tx) = &self.event_tx {
             let _ = tx.send(event);
         }
+    }
+
+    /// 保存会话到数据库（需要启用 persistence feature）
+    #[cfg(feature = "persistence")]
+    pub fn save_to_database(&self, db: &Database) -> Result<i64, Box<dyn std::error::Error>> {
+        let stats = self.finalize_session();
+        let session_id = db.save_session(&stats, &self.lesson.title)?;
+        Ok(session_id)
+    }
+
+    /// 获取课程标题
+    pub fn get_lesson_title(&self) -> &str {
+        &self.lesson.title
     }
 }
 

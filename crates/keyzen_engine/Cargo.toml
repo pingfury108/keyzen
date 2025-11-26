@@ -7,4 +7,9 @@ license.workspace = true
 [dependencies]
 keyzen_core.workspace = true
 keyzen_data.workspace = true
+keyzen_persistence = { path = "../keyzen_persistence", optional = true }
 chrono.workspace = true
+
+[features]
+default = ["persistence"]
+persistence = ["keyzen_persistence"]

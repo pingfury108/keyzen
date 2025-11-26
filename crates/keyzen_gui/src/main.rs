@@ -108,7 +108,8 @@ impl KeyzenApp {
             .flex()
             .flex_col()
             .gap_6()
-            .w(px(600.0))
+            .w_full()
+            .px_8()
             .child(
                 div()
                     .flex()
@@ -172,7 +173,8 @@ impl KeyzenApp {
             .flex()
             .flex_col()
             .gap_8()
-            .w(px(800.0))
+            .w_full()
+            .px_8()
             .child(
                 // 课程名称
                 div()
@@ -197,15 +199,21 @@ impl KeyzenApp {
                     .child(format!("进度: {:.0}%", snapshot.progress * 100.0)),
             )
             .child(
-                div().p_12().bg(rgb(0x2A2A2A)).rounded(px(16.0)).child(
-                    div()
-                        .font_family("JetBrains Mono")
-                        .text_size(px(24.0))
-                        .line_height(px(36.0))
-                        .flex()
-                        .flex_row()
-                        .flex_wrap()
-                        .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
+                div()
+                    .w_full()
+                    .p_12()
+                    .bg(rgb(0x2A2A2A))
+                    .rounded(px(16.0))
+                    .child(
+                        div()
+                            .w_full()
+                            .font_family("JetBrains Mono")
+                            .text_size(px(24.0))
+                            .line_height(px(36.0))
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
                             let (color, bg_color) = if i < input_chars.len() {
                                 let input_char = input_chars[i];
                                 if input_char == target_char {
@@ -260,7 +268,8 @@ impl KeyzenApp {
             .flex()
             .flex_col()
             .gap_8()
-            .w(px(600.0))
+            .w_full()
+            .px_8()
             .child(
                 // 完成标题
                 div()
@@ -282,7 +291,12 @@ impl KeyzenApp {
             )
             .child(
                 // 统计数据卡片
-                div().p_8().bg(rgb(0x2A2A2A)).rounded(px(12.0)).child(
+                div()
+                    .w_full()
+                    .p_8()
+                    .bg(rgb(0x2A2A2A))
+                    .rounded(px(12.0))
+                    .child(
                     div()
                         .flex()
                         .flex_col()
@@ -290,6 +304,7 @@ impl KeyzenApp {
                         .child(
                             // WPM
                             div()
+                                .w_full()
                                 .flex()
                                 .justify_between()
                                 .child(
@@ -309,6 +324,7 @@ impl KeyzenApp {
                         .child(
                             // 准确率
                             div()
+                                .w_full()
                                 .flex()
                                 .justify_between()
                                 .child(
@@ -498,6 +514,7 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(600.0), px(500.0))),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Keyzen - 键禅".into()),
                         appears_transparent: false,

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use keyzen_core::SessionStats;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -40,8 +40,7 @@ impl Database {
 
     /// 获取数据目录路径
     fn get_data_dir() -> Result<PathBuf> {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))?;
+        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))?;
         Ok(PathBuf::from(home).join(".keyzen").join("data"))
     }
 
@@ -139,21 +138,22 @@ impl Database {
              LIMIT ?1",
         )?;
 
-        let sessions = stmt.query_map([limit], |row| {
-            Ok(SessionRecord {
-                id: row.get(0)?,
-                lesson_id: row.get(1)?,
-                lesson_title: row.get(2)?,
-                wpm: row.get(3)?,
-                cpm: row.get(4)?,
-                accuracy: row.get(5)?,
-                total_keystrokes: row.get(6)?,
-                error_count: row.get(7)?,
-                duration_secs: row.get(8)?,
-                completed_at: row.get(9)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let sessions = stmt
+            .query_map([limit], |row| {
+                Ok(SessionRecord {
+                    id: row.get(0)?,
+                    lesson_id: row.get(1)?,
+                    lesson_title: row.get(2)?,
+                    wpm: row.get(3)?,
+                    cpm: row.get(4)?,
+                    accuracy: row.get(5)?,
+                    total_keystrokes: row.get(6)?,
+                    error_count: row.get(7)?,
+                    duration_secs: row.get(8)?,
+                    completed_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(sessions)
     }
@@ -169,21 +169,22 @@ impl Database {
              LIMIT ?2",
         )?;
 
-        let sessions = stmt.query_map(params![lesson_id, limit], |row| {
-            Ok(SessionRecord {
-                id: row.get(0)?,
-                lesson_id: row.get(1)?,
-                lesson_title: row.get(2)?,
-                wpm: row.get(3)?,
-                cpm: row.get(4)?,
-                accuracy: row.get(5)?,
-                total_keystrokes: row.get(6)?,
-                error_count: row.get(7)?,
-                duration_secs: row.get(8)?,
-                completed_at: row.get(9)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let sessions = stmt
+            .query_map(params![lesson_id, limit], |row| {
+                Ok(SessionRecord {
+                    id: row.get(0)?,
+                    lesson_id: row.get(1)?,
+                    lesson_title: row.get(2)?,
+                    wpm: row.get(3)?,
+                    cpm: row.get(4)?,
+                    accuracy: row.get(5)?,
+                    total_keystrokes: row.get(6)?,
+                    error_count: row.get(7)?,
+                    duration_secs: row.get(8)?,
+                    completed_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(sessions)
     }
@@ -194,13 +195,36 @@ impl Database {
             "SELECT key_char, error_rate FROM weak_keys WHERE session_id = ?1 ORDER BY error_rate DESC",
         )?;
 
-        let keys = stmt.query_map([session_id], |row| {
-            Ok(WeakKey {
-                key_char: row.get::<_, String>(0)?.chars().next().unwrap_or(' '),
-                error_rate: row.get(1)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let keys = stmt
+            .query_map([session_id], |row| {
+                Ok(WeakKey {
+                    key_char: row.get::<_, String>(0)?.chars().next().unwrap_or(' '),
+                    error_rate: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(keys)
+    }
+
+    /// 获取所有会话的薄弱按键汇总（按平均错误率排序）
+    pub fn get_overall_weak_keys(&self, limit: usize) -> Result<Vec<WeakKey>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key_char, AVG(error_rate) as avg_error_rate
+             FROM weak_keys
+             GROUP BY key_char
+             ORDER BY avg_error_rate DESC
+             LIMIT ?1",
+        )?;
+
+        let keys = stmt
+            .query_map([limit], |row| {
+                Ok(WeakKey {
+                    key_char: row.get::<_, String>(0)?.chars().next().unwrap_or(' '),
+                    error_rate: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(keys)
     }
@@ -214,7 +238,7 @@ impl Database {
                 AVG(wpm) as avg_wpm,
                 MAX(wpm) as max_wpm,
                 AVG(accuracy) as avg_accuracy
-             FROM sessions"
+             FROM sessions",
         )?;
 
         let stats = stmt.query_row([], |row| {
@@ -266,8 +290,8 @@ pub struct OverallStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use chrono::Utc;
+    use std::time::Duration;
 
     #[test]
     fn test_database_creation() {

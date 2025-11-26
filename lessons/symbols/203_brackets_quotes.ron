@@ -1,0 +1,14 @@
+Lesson(
+    id: 203,
+    lesson_type: Code,
+    language: "en-US",
+    title: "符号进阶 - 括号与引号",
+    description: "练习各种括号和引号的使用",
+    source_text: "(parentheses)\n[brackets]\n{curly braces}\n<angle brackets>\n\"double quotes\"\n'single quotes'\n`backticks`",
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["符号", "括号", "引号"],
+        estimated_time: (75, 0),
+        prerequisite_ids: [202],
+    ),
+)

@@ -73,13 +73,10 @@ impl KeyzenApp {
         let lessons = loader.load_all().unwrap_or_default();
 
         // 初始化数据库
-        let database = Arc::new(
-            Database::default()
-                .unwrap_or_else(|e| {
-                    eprintln!("警告: 无法创建数据库: {}", e);
-                    Database::new(":memory:").expect("无法创建内存数据库")
-                })
-        );
+        let database = Arc::new(Database::default().unwrap_or_else(|e| {
+            eprintln!("警告: 无法创建数据库: {}", e);
+            Database::new(":memory:").expect("无法创建内存数据库")
+        }));
 
         Self {
             session: None,
@@ -140,6 +137,7 @@ impl KeyzenApp {
             .flex_col()
             .gap_6()
             .w_full()
+            .h_full()
             .px_8()
             .child(
                 div()
@@ -175,40 +173,62 @@ impl KeyzenApp {
                             ),
                     ),
             )
-            .children(self.lessons.iter().enumerate().map(|(i, lesson)| {
-                let lesson_index = i;
-                div()
-                    .p_4()
-                    .bg(rgb(0x2A2A2A))
-                    .hover(|style| style.bg(rgb(0x3A3A3A)))
-                    .rounded(px(12.0))
-                    .cursor_pointer()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _event, window, cx| {
-                            this.start_lesson(lesson_index, window, cx);
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(0xF0F0F0))
-                                    .child(format!("{}. {}", i + 1, lesson.title)),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(14.0))
-                                    .text_color(rgb(0xA0A0A0))
-                                    .child(lesson.description.clone()),
-                            ),
-                    )
-            }))
+            .child(
+                // 课程列表容器 - 可滚动
+                uniform_list(
+                    "lesson_list",
+                    self.lessons.len(),
+                    cx.processor(|this: &mut KeyzenApp, range, _window, cx| {
+                        let mut items = Vec::new();
+                        for i in range {
+                            if let Some(lesson) = this.lessons.get(i).cloned() {
+                                let lesson_index = i;
+
+                                items.push(
+                                    div()
+                                        .id(i)
+                                        .p_4()
+                                        .bg(rgb(0x2A2A2A))
+                                        .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                        .rounded(px(12.0))
+                                        .cursor_pointer()
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |this, _event, window, cx| {
+                                                this.start_lesson(lesson_index, window, cx);
+                                            }),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap_2()
+                                                .child(
+                                                    div()
+                                                        .text_size(px(16.0))
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .text_color(rgb(0xF0F0F0))
+                                                        .child(format!(
+                                                            "{}. {}",
+                                                            i + 1,
+                                                            lesson.title
+                                                        )),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(14.0))
+                                                        .text_color(rgb(0xA0A0A0))
+                                                        .child(lesson.description),
+                                                ),
+                                        ),
+                                );
+                            }
+                        }
+                        items
+                    }),
+                )
+                .flex_1(),
+            )
     }
 
     fn render_history_view(&self, cx: &mut Context<Self>) -> Div {
@@ -223,12 +243,15 @@ impl KeyzenApp {
                 avg_accuracy: 0.0,
             }
         });
+        // 获取薄弱按键数据
+        let weak_keys = self.database.get_overall_weak_keys(10).unwrap_or_default();
 
         div()
             .flex()
             .flex_col()
             .gap_6()
             .w_full()
+            .h_full()
             .px_8()
             .child(
                 // 标题栏
@@ -349,9 +372,86 @@ impl KeyzenApp {
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(rgb(0xF0F0F0))
-                                            .child(format!("{:.1}%", overall_stats.avg_accuracy * 100.0)),
+                                            .child(format!(
+                                                "{:.1}%",
+                                                overall_stats.avg_accuracy * 100.0
+                                            )),
                                     ),
                             ),
+                    ),
+            )
+            .child(
+                // 薄弱按键分析卡片
+                div()
+                    .w_full()
+                    .p_6()
+                    .bg(rgb(0x2A2A2A))
+                    .rounded(px(12.0))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_4()
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(0xF0F0F0))
+                                    .child("薄弱按键分析"),
+                            )
+                            .child(if weak_keys.is_empty() {
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(rgb(0x666666))
+                                    .child("暂无数据")
+                            } else {
+                                div().flex().flex_wrap().gap_3().children(
+                                    weak_keys.into_iter().map(|weak_key| {
+                                        // 根据错误率设置颜色
+                                        let color = if weak_key.error_rate > 0.5 {
+                                            rgb(0xFF6B6B) // 红色 - 高错误率
+                                        } else if weak_key.error_rate > 0.3 {
+                                            rgb(0xFFB86C) // 橙色 - 中错误率
+                                        } else {
+                                            rgb(0xFFD93D) // 黄色 - 低错误率
+                                        };
+
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .items_center()
+                                            .gap_1()
+                                            .px_4()
+                                            .py_3()
+                                            .bg(rgb(0x1A1A1A))
+                                            .rounded(px(8.0))
+                                            .child(
+                                                div()
+                                                    .text_size(px(24.0))
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .text_color(color)
+                                                    .child(if weak_key.key_char == ' ' {
+                                                        "␣".to_string()
+                                                    } else if weak_key.key_char == '\n' {
+                                                        "↵".to_string()
+                                                    } else if weak_key.key_char == '\t' {
+                                                        "⇥".to_string()
+                                                    } else {
+                                                        weak_key.key_char.to_string()
+                                                    }),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(rgb(0xA0A0A0))
+                                                    .child(format!(
+                                                        "{:.0}%",
+                                                        weak_key.error_rate * 100.0
+                                                    )),
+                                            )
+                                    }),
+                                )
+                            }),
                     ),
             )
             .child(
@@ -446,7 +546,10 @@ impl KeyzenApp {
                                                             .text_size(px(18.0))
                                                             .font_weight(FontWeight::BOLD)
                                                             .text_color(rgb(0xF0F0F0))
-                                                            .child(format!("{:.1}%", record.accuracy * 100.0)),
+                                                            .child(format!(
+                                                                "{:.1}%",
+                                                                record.accuracy * 100.0
+                                                            )),
                                                     ),
                                             ),
                                     ),
@@ -665,7 +768,9 @@ impl KeyzenApp {
                                     if let Some(session) = &this.session {
                                         let db = this.database.clone();
                                         session.update(cx, |session_model, _cx| {
-                                            if let Err(e) = session_model.session.save_to_database(&db) {
+                                            if let Err(e) =
+                                                session_model.session.save_to_database(&db)
+                                            {
                                                 eprintln!("保存会话数据失败: {}", e);
                                             }
                                         });
@@ -696,7 +801,9 @@ impl KeyzenApp {
                                     if let Some(session) = &this.session {
                                         let db = this.database.clone();
                                         session.update(cx, |session_model, _cx| {
-                                            if let Err(e) = session_model.session.save_to_database(&db) {
+                                            if let Err(e) =
+                                                session_model.session.save_to_database(&db)
+                                            {
                                                 eprintln!("保存会话数据失败: {}", e);
                                             }
                                         });

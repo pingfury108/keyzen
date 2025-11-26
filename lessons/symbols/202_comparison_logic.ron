@@ -1,0 +1,14 @@
+Lesson(
+    id: 202,
+    lesson_type: Code,
+    language: "en-US",
+    title: "符号进阶 - 比较与逻辑",
+    description: "练习比较运算符和逻辑运算符",
+    source_text: "a == b\nx != y\ncount > 0\nvalue < 100\nage >= 18\nscore <= 100\nflag && true\nresult || false\n!active",
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["符号", "比较", "逻辑"],
+        estimated_time: (75, 0),
+        prerequisite_ids: [201],
+    ),
+)

@@ -187,38 +187,43 @@ impl KeyzenApp {
                                 items.push(
                                     div()
                                         .id(i)
-                                        .p_4()
-                                        .bg(rgb(0x2A2A2A))
-                                        .hover(|style| style.bg(rgb(0x3A3A3A)))
-                                        .rounded(px(12.0))
-                                        .cursor_pointer()
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _event, window, cx| {
-                                                this.start_lesson(lesson_index, window, cx);
-                                            }),
-                                        )
+                                        .px_8()
+                                        .py_2()
                                         .child(
                                             div()
-                                                .flex()
-                                                .flex_col()
-                                                .gap_2()
-                                                .child(
-                                                    div()
-                                                        .text_size(px(16.0))
-                                                        .font_weight(FontWeight::MEDIUM)
-                                                        .text_color(rgb(0xF0F0F0))
-                                                        .child(format!(
-                                                            "{}. {}",
-                                                            i + 1,
-                                                            lesson.title
-                                                        )),
+                                                .p_4()
+                                                .bg(rgb(0x2A2A2A))
+                                                .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                                .rounded(px(12.0))
+                                                .cursor_pointer()
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _event, window, cx| {
+                                                        this.start_lesson(lesson_index, window, cx);
+                                                    }),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_size(px(14.0))
-                                                        .text_color(rgb(0xA0A0A0))
-                                                        .child(lesson.description),
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap_2()
+                                                        .child(
+                                                            div()
+                                                                .text_size(px(16.0))
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .text_color(rgb(0xF0F0F0))
+                                                                .child(format!(
+                                                                    "{}. {}",
+                                                                    i + 1,
+                                                                    lesson.title
+                                                                )),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(px(14.0))
+                                                                .text_color(rgb(0xA0A0A0))
+                                                                .child(lesson.description),
+                                                        ),
                                                 ),
                                         ),
                                 );

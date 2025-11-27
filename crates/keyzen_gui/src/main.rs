@@ -3,7 +3,7 @@ use gpui::*;
 use keyzen_core::*;
 use keyzen_data::LessonLoader;
 use keyzen_engine::TypingSession;
-use keyzen_persistence::Database;
+use keyzen_persistence::{Database, SessionRecord};
 use std::sync::{mpsc, Arc};
 
 // 定义 Actions
@@ -16,6 +16,8 @@ struct KeyzenApp {
     focus_handle: FocusHandle,
     database: Arc<Database>,
     show_history: bool,
+    // 缓存历史记录,用于列表渲染
+    cached_sessions: Vec<SessionRecord>,
 }
 
 struct SessionModel {
@@ -85,6 +87,7 @@ impl KeyzenApp {
             focus_handle: cx.focus_handle(),
             database,
             show_history: false,
+            cached_sessions: Vec::new(),
         }
     }
 
@@ -117,6 +120,10 @@ impl KeyzenApp {
 
     fn show_history(&mut self, _: &ShowHistory, window: &mut Window, cx: &mut Context<Self>) {
         self.show_history = !self.show_history;
+        if self.show_history {
+            // 加载历史记录
+            self.cached_sessions = self.database.get_recent_sessions(10).unwrap_or_default();
+        }
         self.focus_handle.focus(window);
         cx.notify();
     }
@@ -138,7 +145,7 @@ impl KeyzenApp {
             .gap_6()
             .w_full()
             .h_full()
-            .px_8()
+            .p_8()
             .child(
                 div()
                     .flex()
@@ -185,47 +192,43 @@ impl KeyzenApp {
                                 let lesson_index = i;
 
                                 items.push(
-                                    div()
-                                        .id(i)
-                                        .px_8()
-                                        .py_2()
-                                        .child(
-                                            div()
-                                                .p_4()
-                                                .bg(rgb(0x2A2A2A))
-                                                .hover(|style| style.bg(rgb(0x3A3A3A)))
-                                                .rounded(px(12.0))
-                                                .cursor_pointer()
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |this, _event, window, cx| {
-                                                        this.start_lesson(lesson_index, window, cx);
-                                                    }),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .flex_col()
-                                                        .gap_2()
-                                                        .child(
-                                                            div()
-                                                                .text_size(px(16.0))
-                                                                .font_weight(FontWeight::MEDIUM)
-                                                                .text_color(rgb(0xF0F0F0))
-                                                                .child(format!(
-                                                                    "{}. {}",
-                                                                    i + 1,
-                                                                    lesson.title
-                                                                )),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .text_size(px(14.0))
-                                                                .text_color(rgb(0xA0A0A0))
-                                                                .child(lesson.description),
-                                                        ),
-                                                ),
-                                        ),
+                                    div().id(i).px_8().py_2().child(
+                                        div()
+                                            .p_4()
+                                            .bg(rgb(0x2A2A2A))
+                                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                            .rounded(px(12.0))
+                                            .cursor_pointer()
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(move |this, _event, window, cx| {
+                                                    this.start_lesson(lesson_index, window, cx);
+                                                }),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(16.0))
+                                                            .font_weight(FontWeight::MEDIUM)
+                                                            .text_color(rgb(0xF0F0F0))
+                                                            .child(format!(
+                                                                "{}. {}",
+                                                                i + 1,
+                                                                lesson.title
+                                                            )),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(14.0))
+                                                            .text_color(rgb(0xA0A0A0))
+                                                            .child(lesson.description),
+                                                    ),
+                                            ),
+                                    ),
                                 );
                             }
                         }
@@ -237,8 +240,7 @@ impl KeyzenApp {
     }
 
     fn render_history_view(&self, cx: &mut Context<Self>) -> Div {
-        // 获取最近 10 条练习记录
-        let sessions = self.database.get_recent_sessions(10).unwrap_or_default();
+        // 获取总体统计
         let overall_stats = self.database.get_overall_stats().unwrap_or_else(|_| {
             keyzen_persistence::OverallStats {
                 total_sessions: 0,
@@ -257,7 +259,7 @@ impl KeyzenApp {
             .gap_6()
             .w_full()
             .h_full()
-            .px_8()
+            .p_8()
             .child(
                 // 标题栏
                 div()
@@ -467,100 +469,122 @@ impl KeyzenApp {
                     .text_color(rgb(0xF0F0F0))
                     .child("最近练习"),
             )
-            .children(if sessions.is_empty() {
-                vec![div()
-                    .p_8()
-                    .flex()
-                    .justify_center()
-                    .text_color(rgb(0x666666))
-                    .child("暂无练习记录")]
-            } else {
-                sessions
-                    .into_iter()
-                    .map(|record| {
-                        // 格式化时间
-                        let datetime = chrono::DateTime::from_timestamp(record.completed_at, 0)
-                            .unwrap_or_else(|| chrono::Utc::now());
-                        let time_str = datetime.format("%Y-%m-%d %H:%M").to_string();
+            .when(self.cached_sessions.is_empty(), |el| {
+                el.child(
+                    div()
+                        .p_8()
+                        .flex()
+                        .justify_center()
+                        .text_color(rgb(0x666666))
+                        .child("暂无练习记录")
+                )
+            })
+            .when(!self.cached_sessions.is_empty(), |el| {
+                el.child(
+                    uniform_list(
+                        "history_list",
+                        self.cached_sessions.len(),
+                        cx.processor(|this: &mut KeyzenApp, range, _window, _cx| {
+                            let mut items = Vec::new();
+                            for i in range {
+                                if let Some(record) = this.cached_sessions.get(i).cloned() {
+                                    let record: SessionRecord = record; // Re-introducing this line
+                                    let lesson_title = record.lesson_title;
+                                    let completed_at = {
+                                        let datetime = chrono::DateTime::from_timestamp(record.completed_at, 0)
+                                            .unwrap_or_else(|| chrono::Utc::now());
+                                        datetime.format("%Y-%m-%d %H:%M").to_string()
+                                    };
+                                    let wpm = format!("{:.0}", record.wpm);
+                                    let accuracy = format!("{:.1}%", record.accuracy * 100.0);
 
-                        div()
-                            .p_4()
-                            .bg(rgb(0x2A2A2A))
-                            .hover(|style| style.bg(rgb(0x3A3A3A)))
-                            .rounded(px(12.0))
-                            .child(
-                                div()
-                                    .flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
+                                    items.push(
                                         div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_2()
+                                            .id(i)
+                                            .py_2()
                                             .child(
                                                 div()
-                                                    .text_size(px(16.0))
-                                                    .font_weight(FontWeight::MEDIUM)
-                                                    .text_color(rgb(0xF0F0F0))
-                                                    .child(record.lesson_title),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.0))
-                                                    .text_color(rgb(0x666666))
-                                                    .child(time_str),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .gap_6()
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .flex_col()
-                                                    .items_end()
+                                                    .p_4()
+                                                    .bg(rgb(0x2A2A2A))
+                                                    .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                                    .rounded(px(12.0))
                                                     .child(
                                                         div()
-                                                            .text_size(px(14.0))
-                                                            .text_color(rgb(0xA0A0A0))
-                                                            .child("速度"),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(18.0))
-                                                            .font_weight(FontWeight::BOLD)
-                                                            .text_color(rgb(0x00C2B8))
-                                                            .child(format!("{:.0}", record.wpm)),
+                                                            .flex()
+                                                            .justify_between()
+                                                            .items_center()
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .flex_col()
+                                                                    .gap_2()
+                                                                    .child(
+                                                                        div()
+                                                                            .text_size(px(16.0))
+                                                                            .font_weight(FontWeight::MEDIUM)
+                                                                            .text_color(rgb(0xF0F0F0))
+                                                                            .child(lesson_title),
+                                                                    )
+                                                                    .child(
+                                                                        div()
+                                                                            .text_size(px(12.0))
+                                                                            .text_color(rgb(0x666666))
+                                                                            .child(completed_at),
+                                                                    ),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .gap_6()
+                                                                    .child(
+                                                                        div()
+                                                                            .flex()
+                                                                            .flex_col()
+                                                                            .items_end()
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_size(px(14.0))
+                                                                                    .text_color(rgb(0xA0A0A0))
+                                                                                    .child("速度"),
+                                                                            )
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_size(px(18.0))
+                                                                                    .font_weight(FontWeight::BOLD)
+                                                                                    .text_color(rgb(0x00C2B8))
+                                                                                    .child(wpm),
+                                                                            ),
+                                                                    )
+                                                                    .child(
+                                                                        div()
+                                                                            .flex()
+                                                                            .flex_col()
+                                                                            .items_end()
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_size(px(14.0))
+                                                                                    .text_color(rgb(0xA0A0A0))
+                                                                                    .child("准确率"),
+                                                                            )
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_size(px(18.0))
+                                                                                    .font_weight(FontWeight::BOLD)
+                                                                                    .text_color(rgb(0xF0F0F0))
+                                                                                    .child(accuracy),
+                                                                            ),
+                                                                    ),
+                                                            ),
                                                     ),
                                             )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .flex_col()
-                                                    .items_end()
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(14.0))
-                                                            .text_color(rgb(0xA0A0A0))
-                                                            .child("准确率"),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(18.0))
-                                                            .font_weight(FontWeight::BOLD)
-                                                            .text_color(rgb(0xF0F0F0))
-                                                            .child(format!(
-                                                                "{:.1}%",
-                                                                record.accuracy * 100.0
-                                                            )),
-                                                    ),
-                                            ),
-                                    ),
-                            )
-                    })
-                    .collect()
+                                    );
+                                }
+                            }
+                            items
+                        }),
+                    )
+                    .flex_1()
+                )
             })
     }
 
@@ -583,7 +607,7 @@ impl KeyzenApp {
             .flex_col()
             .gap_8()
             .w_full()
-            .px_8()
+            .p_8()
             .child(
                 // 课程名称
                 div()
@@ -678,7 +702,7 @@ impl KeyzenApp {
             .flex_col()
             .gap_8()
             .w_full()
-            .px_8()
+            .p_8()
             .child(
                 // 完成标题
                 div()

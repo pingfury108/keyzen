@@ -9,6 +9,7 @@ keyzen_core.workspace = true
 keyzen_data.workspace = true
 keyzen_persistence = { path = "../keyzen_persistence", optional = true }
 chrono.workspace = true
+pinyin = "0.10"
 
 [features]
 default = ["persistence"]

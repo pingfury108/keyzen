@@ -88,6 +88,9 @@ pub enum TypingEvent {
     ErrorCorrected {
         position: usize,
     },
+    PinyinStateChanged {
+        state: PinyinState,
+    },
 }
 
 /// 会话统计数据

@@ -1,0 +1,14 @@
+Lesson(
+    id: 302,
+    lesson_type: Pinyin,
+    language: "zh-CN",
+    title: "拼音基础 2 - 日常用语",
+    description: "练习常用的日常对话",
+    source_text: "是的不是谢谢你对不起没关系",
+    meta: LessonMeta(
+        difficulty: Beginner,
+        tags: ["拼音", "中文", "日常"],
+        estimated_time: (90, 0),
+        prerequisite_ids: [301],
+    ),
+)

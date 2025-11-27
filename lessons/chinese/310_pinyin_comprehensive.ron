@@ -1,0 +1,14 @@
+Lesson(
+    id: 310,
+    lesson_type: Pinyin,
+    language: "zh-CN",
+    title: "拼音综合 - 实战练习",
+    description: "综���练习各种场景的中文对话",
+    source_text: "你好我是小明很高兴认识你今天天气真好我们一起去公园走走吧好的没问题",
+    meta: LessonMeta(
+        difficulty: Advanced,
+        tags: ["拼音", "中文", "综合", "实战"],
+        estimated_time: (180, 0),
+        prerequisite_ids: [309],
+    ),
+)

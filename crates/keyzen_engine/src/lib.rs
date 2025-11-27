@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "persistence")]
 use keyzen_persistence::Database;
 
+mod pinyin;
+pub use pinyin::{PinyinInputResult, PinyinProcessor};
+
 pub struct TypingSession {
     // 课程数据
     lesson: Lesson,
@@ -17,6 +20,9 @@ pub struct TypingSession {
     input_chars: Vec<char>,
     current_position: usize,
     error_positions: HashSet<usize>,
+
+    // 拼音输入处理器
+    pinyin_processor: Option<PinyinProcessor>,
 
     // 统计数据
     start_time: Option<Instant>,
@@ -36,6 +42,13 @@ impl TypingSession {
     ) -> Self {
         let target_chars: Vec<char> = lesson.source_text.chars().collect();
 
+        // 如果是拼音课程，创建拼音处理器
+        let pinyin_processor = if matches!(lesson.lesson_type, LessonType::Pinyin) {
+            Some(PinyinProcessor::new())
+        } else {
+            None
+        };
+
         Self {
             lesson,
             mode,
@@ -44,6 +57,7 @@ impl TypingSession {
             input_chars: Vec::new(),
             current_position: 0,
             error_positions: HashSet::new(),
+            pinyin_processor,
             start_time: None,
             total_keystrokes: 0,
             correct_keystrokes: 0,
@@ -62,6 +76,41 @@ impl TypingSession {
         let now = Instant::now();
         self.total_keystrokes += 1;
 
+        // 拼音模式处理
+        if let Some(processor) = &mut self.pinyin_processor {
+            let result = processor.handle_input(ch);
+
+            match result {
+                PinyinInputResult::Composing => {
+                    // 正在组合中，发送拼音状态更新事件
+                    let state = processor.state().clone();
+                    self.send_event(TypingEvent::PinyinStateChanged { state });
+                    return;
+                }
+                PinyinInputResult::Commit(committed_char) => {
+                    // 提交汉字，发送状态清空事件
+                    self.send_event(TypingEvent::PinyinStateChanged {
+                        state: PinyinState::default(),
+                    });
+                    // 使用提交的字符继续处理
+                    self.handle_char_input(committed_char, now);
+                    return;
+                }
+                PinyinInputResult::PassThrough(passthrough_char) => {
+                    // 透传字符，正常处理
+                    // 继续下面的逻辑
+                    self.handle_char_input(passthrough_char, now);
+                    return;
+                }
+            }
+        }
+
+        // 非拼音模式的正常处理
+        self.handle_char_input(ch, now);
+    }
+
+    /// 处理字符输入（拼音模式和普通模式共用）
+    fn handle_char_input(&mut self, ch: char, now: Instant) {
         // 处理退格键
         if ch == '\u{0008}' {
             self.handle_backspace();
@@ -263,6 +312,7 @@ impl TypingSession {
             } else {
                 0.0
             },
+            pinyin_state: self.pinyin_processor.as_ref().map(|p| p.state().clone()),
         }
     }
 
@@ -304,6 +354,7 @@ pub struct SessionSnapshot {
     pub current_wpm: f64,
     pub accuracy: f64,
     pub progress: f32,
+    pub pinyin_state: Option<PinyinState>,
 }
 
 #[cfg(test)]

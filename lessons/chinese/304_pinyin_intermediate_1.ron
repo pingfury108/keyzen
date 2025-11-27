@@ -1,6 +1,6 @@
 Lesson(
     id: 304,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音进阶 1 - 时间表达",
     description: "练习时间相关的词语",

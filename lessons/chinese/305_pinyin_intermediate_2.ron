@@ -1,6 +1,6 @@
 Lesson(
     id: 305,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音进阶 2 - 地点方位",
     description: "练习地点和方位词汇",

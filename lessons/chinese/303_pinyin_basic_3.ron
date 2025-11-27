@@ -1,6 +1,6 @@
 Lesson(
     id: 303,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音基础 3 - 人称代词",
     description: "练习常用人称代词",

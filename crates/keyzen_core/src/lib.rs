@@ -7,7 +7,7 @@ pub enum LessonType {
     Prose,        // 散文
     Code,         // 代码
     SpecialChars, // 特殊符号
-    Pinyin,       // 拼音练习
+    Chinese,      // 中文练习（使用系统输入法）
 }
 
 /// 难度等级
@@ -88,9 +88,6 @@ pub enum TypingEvent {
     ErrorCorrected {
         position: usize,
     },
-    PinyinStateChanged {
-        state: PinyinState,
-    },
 }
 
 /// 会话统计数据
@@ -106,14 +103,6 @@ pub struct SessionStats {
     pub duration: Duration,
     pub timestamp: i64,
     pub weak_keys: Vec<(char, f32)>,
-}
-
-/// 中文拼音输入状态
-#[derive(Debug, Clone, Default)]
-pub struct PinyinState {
-    pub buffer: String,
-    pub candidates: Vec<char>,
-    pub composing: bool,
 }
 
 // Duration 序列化辅助模块

@@ -1,6 +1,6 @@
 Lesson(
     id: 302,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音基础 2 - 日常用语",
     description: "练习常用的日常对话",

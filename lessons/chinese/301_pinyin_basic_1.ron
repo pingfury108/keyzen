@@ -1,6 +1,6 @@
 Lesson(
     id: 301,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音基础 1 - 问候语",
     description: "练习最基本的中文问候用语",

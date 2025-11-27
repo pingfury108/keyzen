@@ -1,6 +1,6 @@
 Lesson(
     id: 307,
-    lesson_type: Pinyin,
+    lesson_type: Chinese,
     language: "zh-CN",
     title: "拼音高级 1 - 完整句子",
     description: "练习简单的完整句子",

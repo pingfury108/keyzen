@@ -12,6 +12,7 @@ pub struct TypingSession {
     lesson: Lesson,
     mode: PracticeMode,
     input_mode: InputMode,
+    language: String, // 课程语言，用于统计计算
 
     // 输入状态
     target_chars: Vec<char>,
@@ -36,11 +37,13 @@ impl TypingSession {
         event_tx: Option<mpsc::Sender<TypingEvent>>,
     ) -> Self {
         let target_chars: Vec<char> = lesson.source_text.chars().collect();
+        let language = lesson.language.clone();
 
         Self {
             lesson,
             mode,
             input_mode: InputMode::default(),
+            language,
             target_chars,
             input_chars: Vec::new(),
             current_position: 0,
@@ -195,9 +198,24 @@ impl TypingSession {
             return 0.0;
         }
 
-        // WPM = (字符数 / 5) / (秒数 / 60)
         let chars = recent.len() as f64;
-        (chars / 5.0) / (duration / 60.0)
+        let cpm = (chars / duration) * 60.0;
+
+        // 根据语言调整 WPM 计算
+        if self.is_cjk_language() {
+            // CJK 语言: 1 个字符 = 1 个"词"
+            cpm
+        } else {
+            // 拉丁字母语言: 平均 5 个字符 = 1 个词
+            cpm / 5.0
+        }
+    }
+
+    /// 判断是否为 CJK（中日韩）语言
+    fn is_cjk_language(&self) -> bool {
+        self.language.starts_with("zh-") // 中文
+            || self.language.starts_with("ja-") // 日文
+            || self.language.starts_with("ko-") // 韩文
     }
 
     /// 完成会话并生成统计
@@ -219,7 +237,14 @@ impl TypingSession {
             0.0
         };
 
-        let wpm = cpm / 5.0;
+        // 根据语言调整 WPM 计算
+        let wpm = if self.is_cjk_language() {
+            // CJK 语言: 1 个字符 = 1 个"词"
+            cpm
+        } else {
+            // 拉丁字母语言: 平均 5 个字符 = 1 个词
+            cpm / 5.0
+        };
 
         // 统计薄弱按键
         let weak_keys = self.calculate_weak_keys();

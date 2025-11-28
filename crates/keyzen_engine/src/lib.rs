@@ -1,4 +1,5 @@
 use keyzen_core::*;
+use log::{debug, info};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -54,6 +55,11 @@ impl TypingSession {
 
     /// 核心方法：处理按键
     pub fn handle_keystroke(&mut self, ch: char) {
+        info!(
+            "🟢 Engine::handle_keystroke 收到字符: {:?} (U+{:04X})",
+            ch, ch as u32
+        );
+
         // 首次按键启动计时
         if self.start_time.is_none() {
             self.start_time = Some(Instant::now());
@@ -70,6 +76,7 @@ impl TypingSession {
     fn handle_char_input(&mut self, ch: char, now: Instant) {
         // 处理退格键
         if ch == '\u{0008}' {
+            debug!("  ↳ 处理退格键");
             self.handle_backspace();
             return;
         }
@@ -77,6 +84,11 @@ impl TypingSession {
         // 检查是否正确
         let target_char = self.target_chars.get(self.current_position);
         let is_correct = target_char == Some(&ch);
+
+        debug!(
+            "  ↳ 位置 {}: 目标={:?}, 输入={:?}, 正确={}",
+            self.current_position, target_char, ch, is_correct
+        );
 
         if is_correct {
             self.correct_keystrokes += 1;

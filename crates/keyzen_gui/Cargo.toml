@@ -25,6 +25,8 @@ keyzen_data.workspace = true
 keyzen_persistence = { path = "../keyzen_persistence" }
 anyhow.workspace = true
 chrono.workspace = true
+log = "0.4"
+env_logger = "0.11"
 
 # GPUI - Zed 的 UI 框架
 gpui = "0.2"

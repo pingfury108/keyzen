@@ -44,6 +44,8 @@ struct KeyzenApp {
     show_history: bool,
     show_settings: bool,
     current_theme: Theme,
+    // 缓存完成时的统计快照（避免 WPM 持续变化）
+    completion_snapshot: Option<keyzen_engine::SessionSnapshot>,
     // 缓存历史记录,用于列表渲染
     cached_sessions: Vec<SessionRecord>,
     // 用于 InputHandler
@@ -216,6 +218,7 @@ impl KeyzenApp {
             show_history: false,
             show_settings: false,
             current_theme,
+            completion_snapshot: None,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
         }
@@ -225,6 +228,7 @@ impl KeyzenApp {
         if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
             self.session = Some(cx.new(|cx| SessionModel::new(lesson, cx)));
             self.selected_lesson = Some(lesson_index);
+            self.completion_snapshot = None; // 清除之前的完成快照
             self.focus_handle.focus(window);
             cx.notify();
         }
@@ -252,6 +256,7 @@ impl KeyzenApp {
         self.session = None;
         self.selected_lesson = None;
         self.show_history = false;
+        self.completion_snapshot = None; // 清除完成快照
         self.focus_handle.focus(window);
         cx.notify();
     }
@@ -324,6 +329,7 @@ impl KeyzenApp {
         if let Some(lesson_index) = self.selected_lesson {
             if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
                 self.session = Some(cx.new(|cx| SessionModel::new(lesson, cx)));
+                self.completion_snapshot = None; // 清除完成快照
                 self.focus_handle.focus(window);
                 cx.notify();
             }
@@ -834,12 +840,46 @@ impl KeyzenApp {
                     .justify_center()
                     .gap_8()
                     .text_sm()
+                    .font_family("JetBrains Mono") // 使用等宽字体
                     .text_color(colors.text_secondary)
-                    .child(format!("WPM: {:.0}", snapshot.current_wpm))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child("WPM:")
+                            .child(
+                                div()
+                                    .w(px(36.0)) // 固定宽度: 3位数字
+                                    .text_align(TextAlign::Right)
+                                    .child(format!("{:.0}", snapshot.current_wpm))
+                            )
+                    )
                     .child("|")
-                    .child(format!("准确率: {:.1}%", snapshot.accuracy * 100.0))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child("准确率:")
+                            .child(
+                                div()
+                                    .w(px(60.0)) // 固定宽度: 100.0%
+                                    .text_align(TextAlign::Right)
+                                    .child(format!("{:.1}%", snapshot.accuracy * 100.0))
+                            )
+                    )
                     .child("|")
-                    .child(format!("进度: {:.0}%", snapshot.progress * 100.0)),
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child("进度:")
+                            .child(
+                                div()
+                                    .w(px(48.0)) // 固定宽度: 100%
+                                    .text_align(TextAlign::Right)
+                                    .child(format!("{:.0}%", snapshot.progress * 100.0))
+                            )
+                    ),
             )
             .child(
                 div()
@@ -1367,7 +1407,12 @@ impl Render for KeyzenApp {
         } else if let Some(session) = &self.session {
             let is_completed = session.read(cx).is_completed();
             if is_completed {
-                let snapshot = session.read(cx).get_snapshot();
+                // 课程完成时,缓存快照避免 WPM 持续变化
+                if self.completion_snapshot.is_none() {
+                    self.completion_snapshot = Some(session.read(cx).get_snapshot());
+                }
+                // 使用缓存的快照 (clone 避免 move)
+                let snapshot = self.completion_snapshot.clone().unwrap();
                 self.render_completion_stats(snapshot, cx)
             } else {
                 self.render_practice_area(cx)

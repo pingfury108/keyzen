@@ -76,6 +76,15 @@ impl Database {
             [],
         )?;
 
+        // 配置表
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )",
+            [],
+        )?;
+
         // 创建索引
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_lesson_id ON sessions(lesson_id)",
@@ -285,6 +294,38 @@ pub struct OverallStats {
     pub avg_wpm: f64,
     pub max_wpm: f64,
     pub avg_accuracy: f64,
+}
+
+impl Database {
+    /// 保存配置项
+    pub fn save_config(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// 获取配置项
+    pub fn get_config(&self, key: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM config WHERE key = ?1")?;
+        let mut rows = stmt.query(params![key])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 删除配置项
+    pub fn delete_config(&self, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM config WHERE key = ?1", params![key])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

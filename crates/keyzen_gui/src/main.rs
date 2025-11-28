@@ -9,7 +9,31 @@ use std::ops::Range;
 use std::sync::{mpsc, Arc};
 
 // 定义 Actions
-actions!(keyzen, [Quit, BackToList, ShowHistory]);
+actions!(
+    keyzen,
+    [Quit, BackToList, ShowHistory, ShowSettings, ToggleTheme]
+);
+
+// 主题枚举
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Theme {
+    Dark,
+    Light,
+}
+
+// 主题颜色
+struct ThemeColors {
+    bg_primary: Hsla,
+    bg_secondary: Hsla,
+    bg_hover: Hsla,
+    text_primary: Hsla,
+    text_secondary: Hsla,
+    text_muted: Hsla,
+    accent: Hsla,
+    error: Hsla,
+    error_bg: Hsla,
+    cursor: Hsla,
+}
 
 struct KeyzenApp {
     session: Option<Entity<SessionModel>>,
@@ -18,6 +42,8 @@ struct KeyzenApp {
     focus_handle: FocusHandle,
     database: Arc<Database>,
     show_history: bool,
+    show_settings: bool,
+    current_theme: Theme,
     // 缓存历史记录,用于列表渲染
     cached_sessions: Vec<SessionRecord>,
     // 用于 InputHandler
@@ -169,6 +195,18 @@ impl KeyzenApp {
             Database::new(":memory:").expect("无法创建内存数据库")
         }));
 
+        // 从数据库加载主题配置
+        let current_theme = database
+            .get_config("theme")
+            .ok()
+            .flatten()
+            .and_then(|s| match s.as_str() {
+                "light" => Some(Theme::Light),
+                "dark" => Some(Theme::Dark),
+                _ => None,
+            })
+            .unwrap_or(Theme::Dark); // 默认深色主题
+
         Self {
             session: None,
             lessons,
@@ -176,6 +214,8 @@ impl KeyzenApp {
             focus_handle: cx.focus_handle(),
             database,
             show_history: false,
+            show_settings: false,
+            current_theme,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
         }
@@ -191,6 +231,14 @@ impl KeyzenApp {
     }
 
     fn back_to_list(&mut self, _: &BackToList, window: &mut Window, cx: &mut Context<Self>) {
+        // 如果在设置页面，Esc 关闭设置
+        if self.show_settings {
+            self.show_settings = false;
+            self.focus_handle.focus(window);
+            cx.notify();
+            return;
+        }
+
         // 在清除 session 前保存数据
         if let Some(session) = &self.session {
             let db = self.database.clone();
@@ -218,6 +266,60 @@ impl KeyzenApp {
         cx.notify();
     }
 
+    fn show_settings(&mut self, _: &ShowSettings, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_settings = !self.show_settings;
+        self.focus_handle.focus(window);
+        cx.notify();
+    }
+
+    fn toggle_theme(&mut self, _: &ToggleTheme, _window: &mut Window, cx: &mut Context<Self>) {
+        self.current_theme = match self.current_theme {
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::Dark,
+        };
+
+        // 保存主题配置到数据库
+        let theme_str = match self.current_theme {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        };
+        if let Err(e) = self.database.save_config("theme", theme_str) {
+            eprintln!("保存主题配置失败: {}", e);
+        }
+
+        cx.notify();
+    }
+
+    // 获取主题颜色
+    fn get_colors(&self) -> ThemeColors {
+        match self.current_theme {
+            Theme::Dark => ThemeColors {
+                bg_primary: rgb(0x1A1A1A).into(),
+                bg_secondary: rgb(0x2A2A2A).into(),
+                bg_hover: rgb(0x3A3A3A).into(),
+                text_primary: rgb(0xF0F0F0).into(),
+                text_secondary: rgb(0xA0A0A0).into(),
+                text_muted: rgb(0x666666).into(),
+                accent: rgb(0x00C2B8).into(),
+                error: rgb(0xFF9966).into(),
+                error_bg: rgb(0x2A2520).into(),
+                cursor: rgb(0x00C2B8).into(),
+            },
+            Theme::Light => ThemeColors {
+                bg_primary: rgb(0xFAFAFA).into(),
+                bg_secondary: rgb(0xF0F0F0).into(),
+                bg_hover: rgb(0xE5E5E5).into(),
+                text_primary: rgb(0x2A2A2A).into(),
+                text_secondary: rgb(0x666666).into(),
+                text_muted: rgb(0xA0A0A0).into(),
+                accent: rgb(0x0080FF).into(),
+                error: rgb(0xFF6B35).into(),
+                error_bg: rgb(0xFFE5D9).into(),
+                cursor: rgb(0x0080FF).into(),
+            },
+        }
+    }
+
     fn restart_lesson(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(lesson_index) = self.selected_lesson {
             if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
@@ -229,6 +331,8 @@ impl KeyzenApp {
     }
 
     fn render_lesson_list(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = self.get_colors();
+
         div()
             .flex()
             .flex_col()
@@ -245,15 +349,15 @@ impl KeyzenApp {
                         div()
                             .text_size(px(20.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(0xF0F0F0))
+                            .text_color(colors.text_primary)
                             .child("选择课程"),
                     )
                     .child(
                         div()
                             .px_4()
                             .py_2()
-                            .bg(rgb(0x2A2A2A))
-                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .bg(colors.bg_secondary)
+                            .hover(|style| style.bg(colors.bg_hover))
                             .rounded(px(8.0))
                             .cursor_pointer()
                             .on_mouse_down(
@@ -265,7 +369,7 @@ impl KeyzenApp {
                             .child(
                                 div()
                                     .text_size(px(14.0))
-                                    .text_color(rgb(0x00C2B8))
+                                    .text_color(colors.accent)
                                     .child("查看历史记录"),
                             ),
                     ),
@@ -276,6 +380,7 @@ impl KeyzenApp {
                     "lesson_list",
                     self.lessons.len(),
                     cx.processor(|this: &mut KeyzenApp, range, _window, cx| {
+                        let colors = this.get_colors();
                         let mut items = Vec::new();
                         for i in range {
                             if let Some(lesson) = this.lessons.get(i).cloned() {
@@ -285,8 +390,8 @@ impl KeyzenApp {
                                     div().id(i).px_8().py_2().child(
                                         div()
                                             .p_4()
-                                            .bg(rgb(0x2A2A2A))
-                                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                            .bg(colors.bg_secondary)
+                                            .hover(|style| style.bg(colors.bg_hover))
                                             .rounded(px(12.0))
                                             .cursor_pointer()
                                             .on_mouse_down(
@@ -304,7 +409,7 @@ impl KeyzenApp {
                                                         div()
                                                             .text_size(px(16.0))
                                                             .font_weight(FontWeight::MEDIUM)
-                                                            .text_color(rgb(0xF0F0F0))
+                                                            .text_color(colors.text_primary)
                                                             .child(format!(
                                                                 "{}. {}",
                                                                 i + 1,
@@ -314,7 +419,7 @@ impl KeyzenApp {
                                                     .child(
                                                         div()
                                                             .text_size(px(14.0))
-                                                            .text_color(rgb(0xA0A0A0))
+                                                            .text_color(colors.text_secondary)
                                                             .child(lesson.description),
                                                     ),
                                             ),
@@ -331,6 +436,8 @@ impl KeyzenApp {
     }
 
     fn render_history_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = self.get_colors();
+
         // 获取总体统计
         let overall_stats = self.database.get_overall_stats().unwrap_or_else(|_| {
             keyzen_persistence::OverallStats {
@@ -361,15 +468,15 @@ impl KeyzenApp {
                         div()
                             .text_size(px(20.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(0xF0F0F0))
+                            .text_color(colors.text_primary)
                             .child("练习历史"),
                     )
                     .child(
                         div()
                             .px_4()
                             .py_2()
-                            .bg(rgb(0x2A2A2A))
-                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .bg(colors.bg_secondary)
+                            .hover(|style| style.bg(colors.bg_hover))
                             .rounded(px(8.0))
                             .cursor_pointer()
                             .on_mouse_down(
@@ -381,7 +488,7 @@ impl KeyzenApp {
                             .child(
                                 div()
                                     .text_size(px(14.0))
-                                    .text_color(rgb(0x00C2B8))
+                                    .text_color(colors.accent)
                                     .child("返回课程列表"),
                             ),
                     ),
@@ -391,7 +498,7 @@ impl KeyzenApp {
                 div()
                     .w_full()
                     .p_6()
-                    .bg(rgb(0x2A2A2A))
+                    .bg(colors.bg_secondary)
                     .rounded(px(12.0))
                     .child(
                         div()
@@ -405,14 +512,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("总练习次数"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xF0F0F0))
+                                            .text_color(colors.text_primary)
                                             .child(format!("{}", overall_stats.total_sessions)),
                                     ),
                             )
@@ -424,14 +531,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("平均速度"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xF0F0F0))
+                                            .text_color(colors.text_primary)
                                             .child(format!("{:.0} WPM", overall_stats.avg_wpm)),
                                     ),
                             )
@@ -443,14 +550,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("最高速度"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0x00C2B8))
+                                            .text_color(colors.accent)
                                             .child(format!("{:.0} WPM", overall_stats.max_wpm)),
                                     ),
                             )
@@ -462,14 +569,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("平均准确率"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xF0F0F0))
+                                            .text_color(colors.text_primary)
                                             .child(format!(
                                                 "{:.1}%",
                                                 overall_stats.avg_accuracy * 100.0
@@ -483,7 +590,7 @@ impl KeyzenApp {
                 div()
                     .w_full()
                     .p_6()
-                    .bg(rgb(0x2A2A2A))
+                    .bg(colors.bg_secondary)
                     .rounded(px(12.0))
                     .child(
                         div()
@@ -494,13 +601,13 @@ impl KeyzenApp {
                                 div()
                                     .text_size(px(16.0))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(0xF0F0F0))
+                                    .text_color(colors.text_primary)
                                     .child("薄弱按键分析"),
                             )
                             .child(if weak_keys.is_empty() {
                                 div()
                                     .text_size(px(14.0))
-                                    .text_color(rgb(0x666666))
+                                    .text_color(colors.text_muted)
                                     .child("暂无数据")
                             } else {
                                 div().flex().flex_wrap().gap_3().children(
@@ -521,7 +628,7 @@ impl KeyzenApp {
                                             .gap_1()
                                             .px_4()
                                             .py_3()
-                                            .bg(rgb(0x1A1A1A))
+                                            .bg(colors.bg_primary)
                                             .rounded(px(8.0))
                                             .child(
                                                 div()
@@ -541,7 +648,7 @@ impl KeyzenApp {
                                             .child(
                                                 div()
                                                     .text_size(px(12.0))
-                                                    .text_color(rgb(0xA0A0A0))
+                                                    .text_color(colors.text_secondary)
                                                     .child(format!(
                                                         "{:.0}%",
                                                         weak_key.error_rate * 100.0
@@ -557,7 +664,7 @@ impl KeyzenApp {
                 div()
                     .text_size(px(16.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(0xF0F0F0))
+                    .text_color(colors.text_primary)
                     .child("最近练习"),
             )
             .when(self.cached_sessions.is_empty(), |el| {
@@ -566,7 +673,7 @@ impl KeyzenApp {
                         .p_8()
                         .flex()
                         .justify_center()
-                        .text_color(rgb(0x666666))
+                        .text_color(colors.text_muted)
                         .child("暂无练习记录")
                 )
             })
@@ -576,6 +683,7 @@ impl KeyzenApp {
                         "history_list",
                         self.cached_sessions.len(),
                         cx.processor(|this: &mut KeyzenApp, range, _window, _cx| {
+                            let colors = this.get_colors();
                             let mut items = Vec::new();
                             for i in range {
                                 if let Some(record) = this.cached_sessions.get(i).cloned() {
@@ -596,8 +704,8 @@ impl KeyzenApp {
                                             .child(
                                                 div()
                                                     .p_4()
-                                                    .bg(rgb(0x2A2A2A))
-                                                    .hover(|style| style.bg(rgb(0x3A3A3A)))
+                                                    .bg(colors.bg_secondary)
+                                                    .hover(|style| style.bg(colors.bg_hover))
                                                     .rounded(px(12.0))
                                                     .child(
                                                         div()
@@ -613,13 +721,13 @@ impl KeyzenApp {
                                                                         div()
                                                                             .text_size(px(16.0))
                                                                             .font_weight(FontWeight::MEDIUM)
-                                                                            .text_color(rgb(0xF0F0F0))
+                                                                            .text_color(colors.text_primary)
                                                                             .child(lesson_title),
                                                                     )
                                                                     .child(
                                                                         div()
                                                                             .text_size(px(12.0))
-                                                                            .text_color(rgb(0x666666))
+                                                                            .text_color(colors.text_muted)
                                                                             .child(completed_at),
                                                                     ),
                                                             )
@@ -635,14 +743,14 @@ impl KeyzenApp {
                                                                             .child(
                                                                                 div()
                                                                                     .text_size(px(14.0))
-                                                                                    .text_color(rgb(0xA0A0A0))
+                                                                                    .text_color(colors.text_secondary)
                                                                                     .child("速度"),
                                                                             )
                                                                             .child(
                                                                                 div()
                                                                                     .text_size(px(18.0))
                                                                                     .font_weight(FontWeight::BOLD)
-                                                                                    .text_color(rgb(0x00C2B8))
+                                                                                    .text_color(colors.accent)
                                                                                     .child(wpm),
                                                                             ),
                                                                     )
@@ -654,14 +762,14 @@ impl KeyzenApp {
                                                                             .child(
                                                                                 div()
                                                                                     .text_size(px(14.0))
-                                                                                    .text_color(rgb(0xA0A0A0))
+                                                                                    .text_color(colors.text_secondary)
                                                                                     .child("准确率"),
                                                                             )
                                                                             .child(
                                                                                 div()
                                                                                     .text_size(px(18.0))
                                                                                     .font_weight(FontWeight::BOLD)
-                                                                                    .text_color(rgb(0xF0F0F0))
+                                                                                    .text_color(colors.text_primary)
                                                                                     .child(accuracy),
                                                                             ),
                                                                     ),
@@ -681,6 +789,8 @@ impl KeyzenApp {
     }
 
     fn render_practice_area(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = self.get_colors();
+
         let (snapshot, target_text, input_text) = if let Some(session) = &self.session {
             let session_read = session.read(cx);
             (
@@ -715,7 +825,7 @@ impl KeyzenApp {
                     .justify_center()
                     .text_size(px(18.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(0xF0F0F0))
+                    .text_color(colors.text_primary)
                     .child(lesson_title),
             )
             .child(
@@ -724,7 +834,7 @@ impl KeyzenApp {
                     .justify_center()
                     .gap_8()
                     .text_sm()
-                    .text_color(rgb(0xA0A0A0))
+                    .text_color(colors.text_secondary)
                     .child(format!("WPM: {:.0}", snapshot.current_wpm))
                     .child("|")
                     .child(format!("准确率: {:.1}%", snapshot.accuracy * 100.0))
@@ -735,7 +845,7 @@ impl KeyzenApp {
                 div()
                     .w_full()
                     .p_12()
-                    .bg(rgb(0x2A2A2A))
+                    .bg(colors.bg_secondary)
                     .rounded(px(16.0))
                     .child(
                         div()
@@ -750,14 +860,14 @@ impl KeyzenApp {
                                 let (color, bg_color) = if i < input_chars.len() {
                                     let input_char = input_chars[i];
                                     if input_char == target_char {
-                                        (rgb(0xF0F0F0), None)
+                                        (colors.text_primary, None)
                                     } else {
-                                        (rgb(0xFF9966), Some(rgb(0x2A2520)))
+                                        (colors.error, Some(colors.error_bg))
                                     }
                                 } else if i == input_chars.len() {
-                                    (rgb(0x000000), Some(rgb(0x00C2B8)))
+                                    (rgb(0x000000).into(), Some(colors.cursor))
                                 } else {
-                                    (rgb(0xA0A0A0), None)
+                                    (colors.text_secondary, None)
                                 };
 
                                 let mut char_div = div()
@@ -780,7 +890,7 @@ impl KeyzenApp {
                     .flex()
                     .justify_center()
                     .text_xs()
-                    .text_color(rgb(0x666666))
+                    .text_color(colors.text_muted)
                     .child("按 Esc 返回课程列表"),
             );
 
@@ -796,6 +906,8 @@ impl KeyzenApp {
         snapshot: keyzen_engine::SessionSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let colors = self.get_colors();
+
         // 获取当前课程名称
         let lesson_title = self
             .selected_lesson
@@ -816,7 +928,7 @@ impl KeyzenApp {
                     .justify_center()
                     .text_size(px(28.0))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x00C2B8))
+                    .text_color(colors.accent)
                     .child("课程完成！"),
             )
             .child(
@@ -825,7 +937,7 @@ impl KeyzenApp {
                     .flex()
                     .justify_center()
                     .text_size(px(18.0))
-                    .text_color(rgb(0xF0F0F0))
+                    .text_color(colors.text_primary)
                     .child(lesson_title),
             )
             .child(
@@ -833,7 +945,7 @@ impl KeyzenApp {
                 div()
                     .w_full()
                     .p_8()
-                    .bg(rgb(0x2A2A2A))
+                    .bg(colors.bg_secondary)
                     .rounded(px(12.0))
                     .child(
                         div()
@@ -849,14 +961,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(16.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("速度 (WPM)"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xF0F0F0))
+                                            .text_color(colors.text_primary)
                                             .child(format!("{:.0}", snapshot.current_wpm)),
                                     ),
                             )
@@ -869,14 +981,14 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(16.0))
-                                            .text_color(rgb(0xA0A0A0))
+                                            .text_color(colors.text_secondary)
                                             .child("准确率"),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(24.0))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xF0F0F0))
+                                            .text_color(colors.text_primary)
                                             .child(format!("{:.1}%", snapshot.accuracy * 100.0)),
                                     ),
                             ),
@@ -892,7 +1004,7 @@ impl KeyzenApp {
                         div()
                             .px_6()
                             .py_3()
-                            .bg(rgb(0x00C2B8))
+                            .bg(colors.accent)
                             .hover(|style| style.bg(rgb(0x00A89F)))
                             .rounded(px(8.0))
                             .cursor_pointer()
@@ -925,8 +1037,8 @@ impl KeyzenApp {
                         div()
                             .px_6()
                             .py_3()
-                            .bg(rgb(0x2A2A2A))
-                            .hover(|style| style.bg(rgb(0x3A3A3A)))
+                            .bg(colors.bg_secondary)
+                            .hover(|style| style.bg(colors.bg_hover))
                             .rounded(px(8.0))
                             .cursor_pointer()
                             .on_mouse_down(
@@ -954,9 +1066,191 @@ impl KeyzenApp {
                                 div()
                                     .text_size(px(16.0))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(0xF0F0F0))
+                                    .text_color(colors.text_primary)
                                     .child("返回课程列表"),
                             ),
+                    ),
+            )
+            .into_any()
+    }
+
+    fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = self.get_colors();
+        let is_dark = self.current_theme == Theme::Dark;
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .w_full()
+            .h_full()
+            .p_8()
+            .child(
+                // 标题栏
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(20.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.text_primary)
+                            .child("设置"),
+                    )
+                    .child(
+                        div()
+                            .px_4()
+                            .py_2()
+                            .bg(colors.bg_secondary)
+                            .hover(|style| style.bg(colors.bg_hover))
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.show_settings(&ShowSettings, window, cx);
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(colors.accent)
+                                    .child("关闭"),
+                            ),
+                    ),
+            )
+            .child(
+                // 设置内容区域
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_6()
+                    .flex_1()
+                    .child(
+                        // 外观设置
+                        div()
+                            .w_full()
+                            .p_6()
+                            .bg(colors.bg_secondary)
+                            .rounded(px(12.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_4()
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(colors.text_primary)
+                                            .child("外观"),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .justify_between()
+                                            .items_center()
+                                            .child(
+                                                div()
+                                                    .text_size(px(14.0))
+                                                    .text_color(colors.text_secondary)
+                                                    .child("主题"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .gap_2()
+                                                    .child(
+                                                        // 深色主题按钮
+                                                        div()
+                                                            .px_4()
+                                                            .py_2()
+                                                            .bg(if is_dark {
+                                                                colors.accent
+                                                            } else {
+                                                                colors.bg_primary
+                                                            })
+                                                            .when(!is_dark, |el| {
+                                                                el.hover(|style| style.bg(colors.bg_hover))
+                                                            })
+                                                            .rounded(px(6.0))
+                                                            .cursor_pointer()
+                                                            .on_mouse_down(
+                                                                MouseButton::Left,
+                                                                cx.listener(|this, _event, _window, cx| {
+                                                                    if this.current_theme != Theme::Dark {
+                                                                        this.current_theme = Theme::Dark;
+                                                                        // 保存主题配置
+                                                                        if let Err(e) = this.database.save_config("theme", "dark") {
+                                                                            eprintln!("保存主题配置失败: {}", e);
+                                                                        }
+                                                                        cx.notify();
+                                                                    }
+                                                                }),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .text_size(px(14.0))
+                                                                    .text_color(if is_dark {
+                                                                        rgb(0x000000) // 深色主题选中时黑色文字
+                                                                    } else {
+                                                                        colors.text_secondary.into()
+                                                                    })
+                                                                    .child("深色"),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        // 浅色主题按钮
+                                                        div()
+                                                            .px_4()
+                                                            .py_2()
+                                                            .bg(if !is_dark {
+                                                                colors.accent
+                                                            } else {
+                                                                colors.bg_primary
+                                                            })
+                                                            .when(is_dark, |el| {
+                                                                el.hover(|style| style.bg(colors.bg_hover))
+                                                            })
+                                                            .rounded(px(6.0))
+                                                            .cursor_pointer()
+                                                            .on_mouse_down(
+                                                                MouseButton::Left,
+                                                                cx.listener(|this, _event, _window, cx| {
+                                                                    if this.current_theme != Theme::Light {
+                                                                        this.current_theme = Theme::Light;
+                                                                        // 保存主题配置
+                                                                        if let Err(e) = this.database.save_config("theme", "light") {
+                                                                            eprintln!("保存主题配置失败: {}", e);
+                                                                        }
+                                                                        cx.notify();
+                                                                    }
+                                                                }),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .text_size(px(14.0))
+                                                                    .text_color(if !is_dark {
+                                                                        rgb(0xFFFFFF) // 浅色主题选中时白色文字
+                                                                    } else {
+                                                                        colors.text_secondary.into()
+                                                                    })
+                                                                    .child("浅色"),
+                                                            ),
+                                                    ),
+                                            ),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        // 提示文本
+                        div()
+                            .flex()
+                            .justify_center()
+                            .text_xs()
+                            .text_color(colors.text_muted)
+                            .child("按 Esc 关闭设置"),
                     ),
             )
             .into_any()
@@ -1068,7 +1362,9 @@ impl Render for KeyzenApp {
             .detach();
         }
 
-        let content = if let Some(session) = &self.session {
+        let content = if self.show_settings {
+            self.render_settings_view(cx)
+        } else if let Some(session) = &self.session {
             let is_completed = session.read(cx).is_completed();
             if is_completed {
                 let snapshot = session.read(cx).get_snapshot();
@@ -1082,17 +1378,20 @@ impl Render for KeyzenApp {
             self.render_lesson_list(cx)
         };
 
+        let colors = self.get_colors();
+
         div()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .size_full()
-            .bg(rgb(0x1A1A1A))
+            .bg(colors.bg_primary)
             .track_focus(&self.focus_handle)
             .key_context("KeyzenApp")
             .on_action(cx.listener(Self::back_to_list))
             .on_action(cx.listener(Self::show_history))
+            .on_action(cx.listener(Self::show_settings))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 // 只处理功能键，不处理可打印字符
                 // 可打印字符（包括 IME 输入的汉字）由 InputHandler::replace_text_in_range 处理
@@ -1150,6 +1449,7 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("escape", BackToList, Some("KeyzenApp")),
             KeyBinding::new("cmd-h", ShowHistory, Some("KeyzenApp")),
+            KeyBinding::new("cmd-,", ShowSettings, Some("KeyzenApp")),
             KeyBinding::new("cmd-q", Quit, None),
         ]);
 
@@ -1167,7 +1467,11 @@ fn main() {
         // 创建应用菜单
         cx.set_menus(vec![Menu {
             name: "Keyzen".into(),
-            items: vec![MenuItem::action("退出", Quit)],
+            items: vec![
+                MenuItem::action("设置", ShowSettings),
+                MenuItem::separator(),
+                MenuItem::action("退出", Quit),
+            ],
         }]);
 
         // 打开窗口

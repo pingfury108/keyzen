@@ -1,5 +1,5 @@
 use keyzen_core::*;
-use log::{debug, info};
+use log::debug;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -55,7 +55,7 @@ impl TypingSession {
 
     /// 核心方法：处理按键
     pub fn handle_keystroke(&mut self, ch: char) {
-        info!(
+        debug!(
             "🟢 Engine::handle_keystroke 收到字符: {:?} (U+{:04X})",
             ch, ch as u32
         );

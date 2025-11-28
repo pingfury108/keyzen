@@ -4,7 +4,7 @@ use keyzen_core::*;
 use keyzen_data::LessonLoader;
 use keyzen_engine::TypingSession;
 use keyzen_persistence::{Database, SessionRecord};
-use log::{debug, info};
+use log::debug;
 use std::ops::Range;
 use std::sync::{mpsc, Arc};
 
@@ -1008,7 +1008,7 @@ impl EntityInputHandler for KeyzenApp {
     ) {
         // 这是关键方法：当 IME 提交最终文本时会调用这里
         // text 参数包含 IME 确认后的最终文本（比如汉字"你好"）
-        info!(
+        debug!(
             "🔵 InputHandler::replace_text_in_range 收到文本: {:?}",
             text
         );
@@ -1106,19 +1106,19 @@ impl Render for KeyzenApp {
                     // Space 在 IME 输入时用于选择候选词，最终字符由 InputHandler 提交
                     match key {
                         "backspace" => {
-                            info!("  ↳ 处理功能键: Backspace");
+                            debug!("  ↳ 处理功能键: Backspace");
                             session.update(cx, |session, cx| {
                                 session.handle_keystroke("backspace", cx);
                             });
                         }
                         "enter" => {
-                            info!("  ↳ 处理功能键: Enter");
+                            debug!("  ↳ 处理功能键: Enter");
                             session.update(cx, |session, cx| {
                                 session.handle_keystroke("\n", cx);
                             });
                         }
                         "tab" => {
-                            info!("  ↳ 处理功能键: Tab");
+                            debug!("  ↳ 处理功能键: Tab");
                             session.update(cx, |session, cx| {
                                 session.handle_keystroke("\t", cx);
                             });
@@ -1143,7 +1143,7 @@ fn main() {
         .format_timestamp_millis()
         .init();
 
-    info!("🚀 Keyzen GUI 启动");
+    debug!("🚀 Keyzen GUI 启动");
 
     Application::new().run(|cx: &mut App| {
         // 绑定快捷键

@@ -165,6 +165,16 @@ impl SessionModel {
         if let Some(ch) = key.chars().next() {
             self.session.handle_keystroke(ch);
             cx.notify();
+
+            // 检查当前练习是否完成
+            if self.session.is_current_exercise_complete() {
+                // 尝试跳转到下一个练习
+                if self.session.has_next_exercise() {
+                    self.session.advance_to_next_exercise();
+                    debug!("⏭️  自动跳转到下一个练习");
+                    cx.notify();
+                }
+            }
         }
     }
 
@@ -189,7 +199,20 @@ impl SessionModel {
 impl KeyzenApp {
     fn new(cx: &mut Context<Self>) -> Self {
         let loader = LessonLoader::new("./lessons");
-        let lessons = loader.load_all().unwrap_or_default();
+        let lessons = match loader.load_all() {
+            Ok(lessons) => {
+                debug!("✅ 成功加载 {} 个课程", lessons.len());
+                for lesson in &lessons {
+                    debug!("  - [{}] {}: {} 个练习", lesson.id, lesson.title, lesson.exercises.len());
+                }
+                lessons
+            }
+            Err(e) => {
+                eprintln!("❌ 加载课程失败: {}", e);
+                debug!("❌ 加载课程失败: {:?}", e);
+                Vec::new()
+            }
+        };
 
         // 初始化数据库
         let database = Arc::new(Database::default().unwrap_or_else(|e| {
@@ -747,12 +770,15 @@ impl KeyzenApp {
     fn render_practice_area(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.get_colors();
 
-        let (snapshot, target_text, input_text) = if let Some(session) = &self.session {
+        let (snapshot, target_text, input_text, progress, current_exercise) = if let Some(session) = &self.session {
             let session_read = session.read(cx);
+            let (current, total) = session_read.session.get_progress();
             (
                 session_read.get_snapshot(),
                 session_read.get_target_text().to_string(),
                 session_read.get_input_text(),
+                (current, total),
+                session_read.session.get_current_exercise().clone(),
             )
         } else {
             return div().into_any();
@@ -771,112 +797,218 @@ impl KeyzenApp {
         let content = div()
             .flex()
             .flex_col()
-            .gap_8()
             .w_full()
-            .p_8()
+            .h_full()
             .child(
-                // 课程名称
+                // 固定在顶部的信息区域
                 div()
                     .flex()
-                    .justify_center()
-                    .text_size(px(18.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.text_primary)
-                    .child(lesson_title),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_center()
-                    .gap_8()
-                    .text_sm()
-                    .font_family("JetBrains Mono") // 使用等宽字体
-                    .text_color(colors.text_secondary)
+                    .flex_col()
+                    .gap_6()
+                    .p_8()
+                    .pb_4()
                     .child(
+                        // 课程名称
                         div()
                             .flex()
-                            .gap_1()
-                            .child("WPM:")
-                            .child(
-                                div()
-                                    .w(px(36.0)) // 固定宽度: 3位数字
-                                    .text_align(TextAlign::Right)
-                                    .child(format!("{:.0}", snapshot.current_wpm))
-                            )
+                            .justify_center()
+                            .text_size(px(18.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.text_primary)
+                            .child(lesson_title),
                     )
-                    .child("|")
                     .child(
+                        // 练习进度 + 导航按钮
                         div()
                             .flex()
-                            .gap_1()
-                            .child("准确率:")
+                            .justify_center()
+                            .items_center()
+                            .gap_4()
                             .child(
+                                // 上一个按钮
                                 div()
-                                    .w(px(60.0)) // 固定宽度: 100.0%
-                                    .text_align(TextAlign::Right)
-                                    .child(format!("{:.1}%", snapshot.accuracy * 100.0))
+                                    .px_3()
+                                    .py_1()
+                                    .bg(if progress.0 > 0 { colors.bg_secondary } else { colors.bg_primary })
+                                    .when(progress.0 > 0, |el| el.hover(|style| style.bg(colors.bg_hover)))
+                                    .rounded(px(6.0))
+                                    .cursor(if progress.0 > 0 { gpui::CursorStyle::PointingHand } else { gpui::CursorStyle::Arrow })
+                                    .when(progress.0 > 0, |el| {
+                                        el.on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|this, _event, _window, cx| {
+                                                if let Some(session) = &this.session {
+                                                    session.update(cx, |session_model, cx| {
+                                                        session_model.session.go_to_previous_exercise();
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .text_color(if progress.0 > 0 { colors.text_secondary } else { colors.text_muted })
+                                            .child("← 上一个"),
+                                    ),
                             )
+                            .child(
+                                // 进度文字
+                                div()
+                                    .text_size(px(14.0))
+                                    .text_color(colors.text_secondary)
+                                    .child(format!("练习 {}/{}", progress.0 + 1, progress.1)),
+                            )
+                            .child(
+                                // 下一个按钮
+                                div()
+                                    .px_3()
+                                    .py_1()
+                                    .bg(if progress.0 + 1 < progress.1 { colors.bg_secondary } else { colors.bg_primary })
+                                    .when(progress.0 + 1 < progress.1, |el| el.hover(|style| style.bg(colors.bg_hover)))
+                                    .rounded(px(6.0))
+                                    .cursor(if progress.0 + 1 < progress.1 { gpui::CursorStyle::PointingHand } else { gpui::CursorStyle::Arrow })
+                                    .when(progress.0 + 1 < progress.1, |el| {
+                                        el.on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|this, _event, _window, cx| {
+                                                if let Some(session) = &this.session {
+                                                    session.update(cx, |session_model, cx| {
+                                                        session_model.session.go_to_next_exercise();
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .text_color(if progress.0 + 1 < progress.1 { colors.text_secondary } else { colors.text_muted })
+                                            .child("下一个 →"),
+                                    ),
+                            ),
                     )
-                    .child("|")
                     .child(
+                        // 统计信息
                         div()
                             .flex()
-                            .gap_1()
-                            .child("进度:")
+                            .justify_center()
+                            .gap_8()
+                            .text_sm()
+                            .font_family("JetBrains Mono")
+                            .text_color(colors.text_secondary)
                             .child(
                                 div()
-                                    .w(px(48.0)) // 固定宽度: 100%
-                                    .text_align(TextAlign::Right)
-                                    .child(format!("{:.0}%", snapshot.progress * 100.0))
+                                    .flex()
+                                    .gap_1()
+                                    .child("WPM:")
+                                    .child(
+                                        div()
+                                            .w(px(36.0))
+                                            .text_align(TextAlign::Right)
+                                            .child(format!("{:.0}", snapshot.current_wpm))
+                                    )
                             )
+                            .child("|")
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child("准确率:")
+                                    .child(
+                                        div()
+                                            .w(px(60.0))
+                                            .text_align(TextAlign::Right)
+                                            .child(format!("{:.1}%", snapshot.accuracy * 100.0))
+                                    )
+                            )
+                            .child("|")
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child("进度:")
+                                    .child(
+                                        div()
+                                            .w(px(48.0))
+                                            .text_align(TextAlign::Right)
+                                            .child(format!("{:.0}%", snapshot.progress * 100.0))
+                                    )
+                            ),
                     ),
             )
             .child(
+                // 打字区域（占据剩余空间）
                 div()
-                    .w_full()
-                    .p_12()
-                    .bg(colors.bg_secondary)
-                    .rounded(px(16.0))
+                    .flex_1()
+                    .px_8()
+                    .pb_4()
                     .child(
                         div()
                             .w_full()
-                            .font_family("JetBrains Mono")
-                            .text_size(px(24.0))
-                            .line_height(px(36.0))
+                            .p_12()
+                            .bg(colors.bg_secondary)
+                            .rounded(px(16.0))
                             .flex()
-                            .flex_row()
-                            .flex_wrap()
-                            .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
-                                let (color, bg_color) = if i < input_chars.len() {
-                                    let input_char = input_chars[i];
-                                    if input_char == target_char {
-                                        (colors.text_primary, None)
-                                    } else {
-                                        (colors.error, Some(colors.error_bg))
-                                    }
-                                } else if i == input_chars.len() {
-                                    (rgb(0x000000).into(), Some(colors.cursor))
-                                } else {
-                                    (colors.text_secondary, None)
-                                };
-
-                                let mut char_div = div()
-                                    .h(px(36.0))
+                            .flex_col()
+                            .gap_4()
+                            .when(current_exercise.hint.is_some(), |el| {
+                                el.child(
+                                    // 提示信息 - 左对齐
+                                    div()
+                                        .text_size(px(13.0))
+                                        .text_color(colors.text_muted)
+                                        .child(current_exercise.hint.as_ref().unwrap().clone()),
+                                )
+                            })
+                            .child(
+                                // 打字文本
+                                div()
+                                    .w_full()
+                                    .font_family("JetBrains Mono")
+                                    .text_size(px(24.0))
+                                    .line_height(px(36.0))
                                     .flex()
-                                    .items_center()
-                                    .text_color(color)
-                                    .child(target_char.to_string());
+                                    .flex_row()
+                                    .flex_wrap()
+                                    .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
+                                        let (color, bg_color) = if i < input_chars.len() {
+                                            let input_char = input_chars[i];
+                                            if input_char == target_char {
+                                                (colors.text_primary, None)
+                                            } else {
+                                                (colors.error, Some(colors.error_bg))
+                                            }
+                                        } else if i == input_chars.len() {
+                                            (rgb(0x000000).into(), Some(colors.cursor))
+                                        } else {
+                                            (colors.text_secondary, None)
+                                        };
 
-                                if let Some(bg) = bg_color {
-                                    char_div = char_div.bg(bg);
-                                }
+                                        let mut char_div = div()
+                                            .h(px(36.0))
+                                            .flex()
+                                            .items_center()
+                                            .text_color(color)
+                                            .child(target_char.to_string());
 
-                                char_div
-                            })),
+                                        if let Some(bg) = bg_color {
+                                            char_div = char_div.bg(bg);
+                                        }
+
+                                        char_div
+                                    })),
+                            ),
                     ),
             )
             .child(
+                // 固定在底部的提示
                 div()
+                    .px_8()
+                    .pb_8()
+                    .pt_4()
                     .flex()
                     .justify_center()
                     .text_xs()
@@ -1396,8 +1528,17 @@ impl EntityInputHandler for KeyzenApp {
             // 遍历文本中的每个字符并处理
             for ch in text.chars() {
                 debug!("  ↳ 处理字符: {:?} (U+{:04X})", ch, ch as u32);
-                session.update(cx, |session, cx| {
-                    session.handle_keystroke(&ch.to_string(), cx);
+                session.update(cx, |session_model, cx| {
+                    session_model.handle_keystroke(&ch.to_string(), cx);
+
+                    // 检查当前练习是否完成
+                    if session_model.session.is_current_exercise_complete() {
+                        // 尝试跳转到下一个练习
+                        if session_model.session.has_next_exercise() {
+                            session_model.session.advance_to_next_exercise();
+                            debug!("⏭️  自动跳转到下一个练习");
+                        }
+                    }
                 });
             }
         }

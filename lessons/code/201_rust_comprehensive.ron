@@ -1,0 +1,53 @@
+Lesson(
+    id: 201,
+    lesson_type: Code,
+    language: "rust",
+    title: "Rust Programming Comprehensive",
+    description: "Comprehensive Rust code typing practice - common syntax and structures",
+    exercises: [
+        // Level 1: 基本语法
+        Exercise(content: "fn main() {}", hint: Some("函数定义 - function definition")),
+        Exercise(content: "let x = 42;", hint: Some("变量声明 - variable declaration")),
+        Exercise(content: "println!(\"Hello World\");", hint: Some("打印输出 - print output")),
+
+        // Level 2: 类型系统
+        Exercise(content: "let s: String = String::new();", hint: Some("字符串类型 - string type")),
+        Exercise(content: "struct Point { x: i32, y: i32 }", hint: Some("结构体定义 - struct definition")),
+        Exercise(content: "enum Result<T, E> { Ok(T), Err(E) }", hint: Some("枚举定义 - enum definition")),
+
+        // Level 3: 函数和方法
+        Exercise(content: "fn add(a: i32, b: i32) -> i32 { a + b }", hint: None),
+        Exercise(content: "impl Point { fn new(x: i32, y: i32) -> Self { Point { x, y } } }", hint: Some("impl 块 - implementation block")),
+        Exercise(content: "let sum: i32 = add(5, 10);", hint: None),
+
+        // Level 4: 所有权
+        Exercise(content: "let s1 = String::from(\"hello\"); let s2 = s1;", hint: Some("所有权转移 - ownership transfer")),
+        Exercise(content: "let x = 5; let y = x;", hint: None),
+        Exercise(content: "fn borrow(s: &String) { println!(\"{}, s\"); }", hint: Some("借用 - borrowing")),
+
+        // Level 5: 模式匹配
+        Exercise(content: "match value { Some(x) => x, None => 0 }", hint: Some("Option 匹配 - Option matching")),
+        Exercise(content: "for i in 0..10 { println!(\"{}, i\"); }", hint: Some("for 循环 - for loop")),
+        Exercise(content: "while true { break; }", hint: None),
+
+        // Level 6: 错误处理
+        Exercise(content: "use std::io::{self, Read};", hint: Some("IO 模块 - IO module")),
+        Exercise(content: "fn read_file() -> Result<String, std::io::Error> { Ok(\"data\".to_string()) }", hint: Some("返回 Result - return Result")),
+        Exercise(content: "let result: Result<_, Error> = Err(Error::new(ErrorKind::NotFound, \"file not found\"))", hint: None),
+
+        // Level 7: 闭包和迭代器
+        Exercise(content: "let v = vec![1, 2, 3]; let doubled: Vec<i32> = v.iter().map(|x| x * 2).collect();", hint: Some("迭代器 - iterator")),
+        Exercise(content: "let closure = |x| x + 1;", hint: Some("闭包 - closure")),
+        Exercise(content: "let numbers = vec![1, 2, 3, 4, 5].into_iter().filter(|x| x % 2 == 0);", hint: None),
+
+        // Level 8: 类型推断和泛型
+        Exercise(content: "trait Debug { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result; }", hint: Some("特质定义 - trait definition")),
+        Exercise(content: "#[derive(Debug)] struct Config { version: String, port: u16 }", hint: Some("派生宏 - derive macro")),
+    ],
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["rust", "programming", "code"],
+        estimated_time: (540, 0), // 9 minutes
+        prerequisite_ids: [],
+    ),
+)

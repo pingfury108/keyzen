@@ -1,0 +1,54 @@
+Lesson(
+    id: 401,
+    lesson_type: SpecialChars,
+    language: "symbols",
+    title: "Symbols Comprehensive Practice",
+    description: "Comprehensive symbols and special characters typing practice",
+    exercises: [
+        // Level 1: 基础括号
+        Exercise(content: "( ) [ ] { }", hint: Some("基础括号 - basic brackets")),
+        Exercise(content: "(() [[]] {{}})", hint: Some("嵌套括号 - nested brackets")),
+        Exercise(content: "function(x) { return x * 2; }", hint: Some("代码中的括号 - brackets in code")),
+
+        // Level 2: 引号和符号
+        Exercise(content: "\"Hello\" 'World'", hint: Some("单双引号 - single and double quotes")),
+        Exercise(content: "Couldn't can't you're it's", hint: Some("缩写和所有格 - contractions and possessives")),
+        Exercise(content: "The \"quick\" brown fox's path", hint: None),
+
+        // Level 3: 数学运算符
+        Exercise(content: "+ - * / % = == != < >", hint: Some("基本数学运算符 - basic math operators")),
+        Exercise(content: "✓ ✗ ± ∞ ≈ ≠ ≤ ≥", hint: Some("数学符号 - mathematical symbols")),
+        Exercise(content: "result = (5 + 3) * 2 / 4", hint: Some("计算表达式 - calculation expressions")),
+
+        // Level 4: 编程常用符号
+        Exercise(content: "& _ # @ $ > <! %", hint: Some("代码符号 - code symbols")),
+        Exercise(content: "@@ ClassName:instance#id", hint: None),
+        Exercise(content: "<!-- HTML Comment -->", hint: Some("HTML 注释 - HTML comment")),
+
+        // Level 5: 货币和特殊符号
+        Exercise(content: "$10.99 €25.50 ¥1000 £50.00", hint: Some("货币符号 - currency symbols")),
+        Exercise(content: "© 2024 All rights reserved ™", hint: Some("版权和商标 - copyright and trademark")),
+        Exercise(content: "Hello! How are you? I'm great! 😊", hint: Some("表情符号 - emoji")),
+
+        // Level 6: 键盘特殊键
+        Exercise(content: "Tab:→ Enter:↵ Space:␣", hint: Some("特殊键表示 - special key representations")),
+        Exercise(content: "Ctrl+C, Ctrl+V, Ctrl+Z", hint: Some("快捷键 - keyboard shortcuts")),
+        Exercise(content: "Home End PgUp PgDown ⬆️ ⬇️ ⬅️ ➡️", hint: Some("导航键 - navigation keys")),
+
+        // Level 7: 组合符号挑战
+        Exercise(content: "if (score >= 90 && score <= 100) { grade = 'A'; }", hint: Some("混合符号 - mixed symbols")),
+        Exercise(content: "\"debug\" == false && \"release\" == true", hint: None),
+        Exercise(content: "#hashtag @mention [link](https://example.com)", hint: Some("网络文本格式 - web text format")),
+
+        // Level 8: 高级符号序列
+        Exercise(content: "①②③④⑤⑥⑦⑧⑨⑩", hint: Some("数字圆圈 - circled numbers")),
+        Exercise(content: "→ ← ↗ ↖ ↘ ↙ ↗️↗️", hint: Some("箭头符号 - arrow symbols")),
+        Exercise(content: "(〜￣△￣)〜 (╯°□°）╯︵ ┻━┻", hint: Some("ASCII 表情 - ASCII emoticons")),
+    ],
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["symbols", "special-chars", "comprehensive"],
+        estimated_time: (480, 0), // 8 minutes
+        prerequisite_ids: [],
+    ),
+)

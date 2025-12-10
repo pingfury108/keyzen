@@ -1,0 +1,44 @@
+Lesson(
+    id: 301,
+    lesson_type: Chinese,
+    language: "zh-CN",
+    title: "中文综合练习",
+    description: "综合中文拼音输入练习 - 包含基础到高级内容",
+    exercises: [
+        // Level 1: 基础问候和自我介绍
+        Exercise(content: "你好世界", hint: Some("你好世界 - nǐ hǎo shì jiè")),
+        Exercise(content: "我爱打字", hint: Some("我爱打字 - wǒ ài dǎ zì")),
+        Exercise(content: "我叫小明", hint: Some("我叫小明 - wǒ jiào xiǎo míng")),
+
+        // Level 2: 常用词组和表达
+        Exercise(content: "学习进步", hint: Some("学习进步 - xué xí jìn bù")),
+        Exercise(content: "天天向上", hint: Some("天天向上 - tiān tiān xiàng shàng")),
+        Exercise(content: "文字输入", hint: None),
+
+        // Level 3: 完整句子
+        Exercise(content: "今天天气真好", hint: Some("今天天气真好 - jīn tiān tiān qì zhēn hǎo")),
+        Exercise(content: "我们一起学习", hint: None),
+        Exercise(content: "键盘练习很有趣", hint: None),
+
+        // Level 4: 稍微复杂的句子
+        Exercise(content: "努力学习提高打字速度", hint: None),
+        Exercise(content: "不断学习新的技能", hint: None),
+        Exercise(content: "每天都要练习打字", hint: None),
+
+        // Level 5: 双字词组（常见组合）
+        Exercise(content: "中文输入中文练习中文打字", hint: Some("重复练习同类型词组 - repeated practice")),
+        Exercise(content: "拼音练习字节编码", hint: None),
+        Exercise(content: "键盘操作字符处理", hint: None),
+
+        // Level 6: 连续句子（段落级别）
+        Exercise(content: "中文打字需要练习，熟能生巧。\n每天坚持练习，一定会有进步。", hint: Some("包含换行 - includes newline")),
+        Exercise(content: "编程语言有很多种，许多工程师选择Python、Rust、JavaScript等语言进行开发。", hint: Some("包含英文 - includes English")),
+        Exercise(content: "2024年是龙年，龙在中国文化中是吉祥的象征，代表着力量和成功。", hint: Some("包含数字 - includes numbers")),
+    ],
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["chinese", "pinyin", "comprehensive"],
+        estimated_time: (720, 0), // 12 minutes
+        prerequisite_ids: [],
+    ),
+)

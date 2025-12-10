@@ -28,7 +28,65 @@ pub struct LessonMeta {
     pub prerequisite_ids: Vec<u32>,
 }
 
-/// 课程定义
+/// 练习单元
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Exercise {
+    /// 练习内容（主要练习字段）
+    pub content: String,
+    /// 说明/提示（可选，支持跨语言说明）
+    /// 例如：英文练习可以用中文说明
+    pub hint: Option<String>,
+}
+
+impl Exercise {
+    pub fn new(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            hint: None,
+        }
+    }
+
+    pub fn with_hint(content: impl Into<String>, hint: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            hint: Some(hint.into()),
+        }
+    }
+}
+
+/// 单个练习的统计
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExerciseStats {
+    pub exercise_index: usize,
+    pub content_preview: String,  // 前 20 个字符作为预览
+    pub wpm: f64,
+    pub accuracy: f64,
+    pub total_keystrokes: usize,
+    pub error_count: usize,
+    pub duration_secs: u64,
+}
+
+impl ExerciseStats {
+    pub fn from_exercise(exercise: &Exercise, index: usize, wpm: f64, accuracy: f64, keystrokes: usize, errors: usize, duration: Duration) -> Self {
+        Self {
+            exercise_index: index,
+            content_preview: {
+                let mut preview = exercise.content.chars().take(20).collect::<String>();
+                if exercise.content.len() > 20 {
+                    preview.push_str("...");
+                }
+                preview
+            },
+            wpm,
+            accuracy,
+            total_keystrokes: keystrokes,
+            error_count: errors,
+            duration_secs: duration.as_secs(),
+        }
+    }
+}
+
+/// 课程定义（修改：从 source_text 改为 exercises）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lesson {
     pub id: u32,
@@ -36,7 +94,8 @@ pub struct Lesson {
     pub language: String,
     pub title: String,
     pub description: String,
-    pub source_text: String,
+    /// 练习列表，用户将逐一完成
+    pub exercises: Vec<Exercise>,
     pub meta: LessonMeta,
 }
 
@@ -149,19 +208,23 @@ impl WeakUnit {
     }
 }
 
-/// 会话统计数据
+/// 会话统计数据（修改：支持多练习）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStats {
     pub lesson_id: u32,
-    pub wpm: f64,
-    pub cpm: f64,
-    pub accuracy: f64,
+
+    // 新增：每个练习的详细统计
+    pub exercise_stats: Vec<ExerciseStats>,
+
+    // 整体统计（所有练习的汇总）
+    pub overall_wpm: f64,
+    pub overall_cpm: f64,
+    pub overall_accuracy: f64,
     pub total_keystrokes: usize,
     pub error_count: usize,
-    #[serde(with = "duration_serde")]
-    pub duration: Duration,
+    pub duration_secs: u64,
     pub timestamp: i64,
-    pub weak_units: Vec<WeakUnit>, // 修改为 WeakUnit
+    pub weak_units: Vec<WeakUnit>,
 }
 
 // Duration 序列化辅助模块

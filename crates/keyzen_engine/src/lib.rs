@@ -14,14 +14,18 @@ pub struct TypingSession {
     input_mode: InputMode,
     language: String, // 课程语言，用于统计计算
 
-    // 输入状态
+    // 新增：练习进度管理
+    current_exercise_index: usize,       // 当前练习索引 (0-based)
+    exercise_stats: Vec<ExerciseStats>,  // 已完成练习的统计
+
+    // 当前练习的输入状态
     target_chars: Vec<char>,
     input_chars: Vec<char>,
     current_position: usize,
     error_positions: HashSet<usize>,
 
-    // 统计数据
-    start_time: Option<Instant>,
+    // 当前练习的统计数据
+    exercise_start_time: Option<Instant>,
     total_keystrokes: usize,
     correct_keystrokes: usize,
     keystroke_history: VecDeque<(Instant, char, bool)>,
@@ -36,7 +40,10 @@ impl TypingSession {
         mode: PracticeMode,
         event_tx: Option<mpsc::Sender<TypingEvent>>,
     ) -> Self {
-        let target_chars: Vec<char> = lesson.source_text.chars().collect();
+        // 从第一个练习初始化
+        assert!(!lesson.exercises.is_empty(), "Lesson must have at least one exercise");
+        let first_exercise = &lesson.exercises[0];
+        let target_chars: Vec<char> = first_exercise.content.chars().collect();
         let language = lesson.language.clone();
 
         Self {
@@ -44,16 +51,109 @@ impl TypingSession {
             mode,
             input_mode: InputMode::default(),
             language,
+            current_exercise_index: 0,
+            exercise_stats: Vec::new(),
             target_chars,
             input_chars: Vec::new(),
             current_position: 0,
             error_positions: HashSet::new(),
-            start_time: None,
+            exercise_start_time: None,
             total_keystrokes: 0,
             correct_keystrokes: 0,
             keystroke_history: VecDeque::new(),
             event_tx,
         }
+    }
+
+    /// 获取当前练习
+    pub fn get_current_exercise(&self) -> &Exercise {
+        &self.lesson.exercises[self.current_exercise_index]
+    }
+
+    /// 获取进度 (当前索引, 总数)
+    pub fn get_progress(&self) -> (usize, usize) {
+        (self.current_exercise_index, self.lesson.exercises.len())
+    }
+
+    /// 是否还有下一个练习
+    pub fn has_next_exercise(&self) -> bool {
+        self.current_exercise_index + 1 < self.lesson.exercises.len()
+    }
+
+    /// 是否有上一个练习
+    pub fn has_previous_exercise(&self) -> bool {
+        self.current_exercise_index > 0
+    }
+
+    /// 跳转到上一个练习
+    pub fn go_to_previous_exercise(&mut self) -> bool {
+        if self.has_previous_exercise() {
+            self.current_exercise_index -= 1;
+            self.reset_for_current_exercise();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 手动跳转到下一个练习（不保存统计）
+    pub fn go_to_next_exercise(&mut self) -> bool {
+        if self.has_next_exercise() {
+            self.current_exercise_index += 1;
+            self.reset_for_current_exercise();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 当前练习是否完成
+    pub fn is_current_exercise_complete(&self) -> bool {
+        self.current_position >= self.target_chars.len()
+    }
+
+    /// 完成当前练习，进入下一个
+    pub fn advance_to_next_exercise(&mut self) -> bool {
+        // 1. 生成当前练习的统计
+        let stats = self.finalize_current_exercise();
+        self.exercise_stats.push(stats);
+
+        // 2. 检查是否还有下一个
+        if self.has_next_exercise() {
+            // 进入下一个练习
+            self.current_exercise_index += 1;
+            self.reset_for_next_exercise();
+            true
+        } else {
+            // 所有练习完成
+            false
+        }
+    }
+
+    /// 重置状态以开始下一个练习
+    fn reset_for_next_exercise(&mut self) {
+        let exercise = self.get_current_exercise();
+        self.target_chars = exercise.content.chars().collect();
+        self.input_chars.clear();
+        self.current_position = 0;
+        self.error_positions.clear();
+        self.exercise_start_time = None;
+        self.total_keystrokes = 0;
+        self.correct_keystrokes = 0;
+        self.keystroke_history.clear();
+    }
+
+    /// 重置当前练习（用于手动跳转练习时）
+    pub fn reset_for_current_exercise(&mut self) {
+        let exercise = self.get_current_exercise();
+        self.target_chars = exercise.content.chars().collect();
+        self.input_chars.clear();
+        self.current_position = 0;
+        self.error_positions.clear();
+        self.exercise_start_time = None;
+        self.total_keystrokes = 0;
+        self.correct_keystrokes = 0;
+        self.keystroke_history.clear();
     }
 
     /// 核心方法：处理按键
@@ -64,8 +164,8 @@ impl TypingSession {
         );
 
         // 首次按键启动计时
-        if self.start_time.is_none() {
-            self.start_time = Some(Instant::now());
+        if self.exercise_start_time.is_none() {
+            self.exercise_start_time = Some(Instant::now());
         }
 
         let now = Instant::now();
@@ -218,10 +318,10 @@ impl TypingSession {
             || self.language.starts_with("ko-") // 韩文
     }
 
-    /// 完成会话并生成统计
-    fn finalize_session(&self) -> SessionStats {
+    /// 完成当前练习并生成统计
+    fn finalize_current_exercise(&self) -> ExerciseStats {
         let duration = self
-            .start_time
+            .exercise_start_time
             .map(|t| t.elapsed())
             .unwrap_or(Duration::ZERO);
 
@@ -239,24 +339,69 @@ impl TypingSession {
 
         // 根据语言调整 WPM 计算
         let wpm = if self.is_cjk_language() {
-            // CJK 语言: 1 个字符 = 1 个"词"
             cpm
         } else {
-            // 拉丁字母语言: 平均 5 个字符 = 1 个词
             cpm / 5.0
         };
 
-        // 根据语言类型提取薄弱单元
+        let exercise = self.get_current_exercise();
+        ExerciseStats::from_exercise(
+            exercise,
+            self.current_exercise_index,
+            wpm,
+            accuracy,
+            self.total_keystrokes,
+            self.error_positions.len(),
+            duration,
+        )
+    }
+
+    /// 完成会话并生成统计（汇总所有练习）
+    fn finalize_session(&self) -> SessionStats {
+        // 构建所有练习的统计（包括已完成和当前的）
+        let mut all_exercise_stats = self.exercise_stats.clone();
+
+        // 如果当前练习已完成但还没添加到 exercise_stats，添加它
+        if self.is_current_exercise_complete() {
+            let current_stats = self.finalize_current_exercise();
+            all_exercise_stats.push(current_stats);
+        }
+
+        // 汇总所有练习的数据
+        let total_duration_secs: u64 = all_exercise_stats.iter().map(|s| s.duration_secs).sum();
+        let total_keystrokes: usize = all_exercise_stats.iter().map(|s| s.total_keystrokes).sum();
+        let total_errors: usize = all_exercise_stats.iter().map(|s| s.error_count).sum();
+
+        let overall_accuracy = if total_keystrokes > 0 {
+            (total_keystrokes - total_errors) as f64 / total_keystrokes as f64
+        } else {
+            0.0
+        };
+
+        let overall_cpm = if total_duration_secs > 0 {
+            ((total_keystrokes - total_errors) as f64 / total_duration_secs as f64) * 60.0
+        } else {
+            0.0
+        };
+
+        let overall_wpm = if self.is_cjk_language() {
+            overall_cpm
+        } else {
+            overall_cpm / 5.0
+        };
+
+        // 提取薄弱单元（基于所有练习）
         let weak_units = self.extract_weak_units();
 
         SessionStats {
             lesson_id: self.lesson.id,
-            wpm,
-            cpm,
-            accuracy,
-            total_keystrokes: self.total_keystrokes,
-            error_count: self.error_positions.len(),
-            duration,
+            exercise_stats: all_exercise_stats,
+            overall_wpm,
+            overall_cpm,
+            overall_accuracy,
+            total_keystrokes,
+            error_count: total_errors,
+            duration_secs: total_duration_secs,
             timestamp: chrono::Utc::now().timestamp(),
             weak_units,
         }
@@ -439,9 +584,9 @@ impl TypingSession {
         }
     }
 
-    /// 获取目标文本
+    /// 获取当前练习的目标文本
     pub fn get_target_text(&self) -> &str {
-        &self.lesson.source_text
+        &self.get_current_exercise().content
     }
 
     /// 获取已输入的文本

@@ -1,0 +1,44 @@
+Lesson(
+    id: 101,
+    lesson_type: Prose,
+    language: "en-US",
+    title: "English Comprehensive Practice",
+    description: "Comprehensive English typing practice - includes basic, intermediate and advanced content",
+    exercises: [
+        // Level 1: 基础问候语
+        Exercise(content: "hello world", hint: Some("基础问候语 - basic greeting")),
+        Exercise(content: "the quick brown fox", hint: Some("常见测试短语 - common pangram")),
+        Exercise(content: "pack my box with five dozen liquor jugs", hint: Some("完整的测试句子 - full pangram")),
+
+        // Level 2: 单词级别
+        Exercise(content: "keyboard typing practice", hint: Some("键盘练习相关单词 - keyboard related words")),
+        Exercise(content: "programming and development", hint: None),
+        Exercise(content: "software engineering skills", hint: None),
+
+        // Level 3: 简单句子
+        Exercise(content: "i love to code every day", hint: None),
+        Exercise(content: "the cat sits on the mat", hint: None),
+        Exercise(content: "this is my computer keyboard", hint: None),
+
+        // Level 4: 复杂句子
+        Exercise(content: "technology changes how we communicate daily", hint: None),
+        Exercise(content: "the internet connects people around the world", hint: None),
+        Exercise(content: "learning new skills increases opportunities", hint: None),
+
+        // Level 5: 标点和特殊字符
+        Exercise(content: "don't worry, be happy!", hint: Some("包含标点 - includes punctuation")),
+        Exercise(content: "hello! how are you today?", hint: None),
+        Exercise(content: "i'm typing quickly and accurately\n", hint: Some("包含换行 - includes newline")),
+
+        // Level 6: 混合难度挑战
+        Exercise(content: "The quick brown fox jumps over the lazy dog.", hint: None),
+        Exercise(content: "In 1492, Columbus sailed the ocean blue.", hint: Some("包含数字 - includes numbers")),
+        Exercise(content: "Practice makes perfect; consistency is key.", hint: None),
+    ],
+    meta: LessonMeta(
+        difficulty: Intermediate,
+        tags: ["english", "comprehensive"],
+        estimated_time: (600, 0), // 10 minutes
+        prerequisite_ids: [],
+    ),
+)

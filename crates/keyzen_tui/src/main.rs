@@ -193,24 +193,24 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
-                Line::from(format!("最终速度：  {:.0} WPM", stats.wpm)),
-                Line::from(format!("准确率：    {:.1}%", stats.accuracy * 100.0)),
-                Line::from(format!("用时：      {:.0}秒", stats.duration.as_secs())),
+                Line::from(format!("最终速度：  {:.0} WPM", stats.overall_wpm)),
+                Line::from(format!("准确率：    {:.1}%", stats.overall_accuracy * 100.0)),
+                Line::from(format!("用时：      {:.0}秒", stats.duration_secs)),
                 Line::from(format!("总按键数：  {}", stats.total_keystrokes)),
                 Line::from(format!("错误数：    {}", stats.error_count)),
                 Line::from(""),
             ];
 
-            if !stats.weak_keys.is_empty() {
+            if !stats.weak_units.is_empty() {
                 lines.push(Line::from(Span::styled(
-                    "薄弱按键：",
+                    "薄弱单元：",
                     Style::default().fg(Color::Yellow),
                 )));
-                for (ch, rate) in &stats.weak_keys {
+                for unit in &stats.weak_units {
                     lines.push(Line::from(format!(
                         "  '{}' → 错误率 {:.1}%",
-                        ch,
-                        rate * 100.0
+                        unit.content,
+                        unit.error_rate * 100.0
                     )));
                 }
                 lines.push(Line::from(""));

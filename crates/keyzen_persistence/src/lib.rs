@@ -25,6 +25,10 @@ impl Database {
     /// 创建或打开数据库
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let conn = Connection::open(path)?;
+
+        // 启用外键约束
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
+
         let db = Self { conn };
         db.initialize()?;
         Ok(db)
@@ -109,46 +113,6 @@ impl Database {
             [],
         )?;
 
-        // 数据迁移：如果旧的 weak_keys 表存在，迁移数据
-        self.migrate_weak_keys_to_units()?;
-
-        Ok(())
-    }
-
-    /// 迁移旧的 weak_keys 数据到新的 weak_units 表
-    fn migrate_weak_keys_to_units(&self) -> Result<()> {
-        // 检查 weak_keys 表是否存在
-        let table_exists: bool = self.conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='weak_keys'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0) > 0;
-
-        if table_exists {
-            // 迁移数据（将单字符作为 character 类型，根据 error_rate 反推计数）
-            self.conn.execute(
-                "INSERT INTO weak_units (session_id, content, unit_type, error_count, total_count, error_rate)
-                 SELECT
-                     session_id,
-                     key_char,
-                     'character',
-                     -- 假设至少出现 3 次，根据错误率计算错误次数
-                     CAST(ROUND(error_rate * 3) AS INTEGER),
-                     3,
-                     error_rate
-                 FROM weak_keys
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM weak_units wu
-                     WHERE wu.session_id = weak_keys.session_id
-                     AND wu.content = weak_keys.key_char
-                 )",
-                [],
-            )?;
-
-            // 删除旧表（可选，保留以防万一）
-            // self.conn.execute("DROP TABLE weak_keys", [])?;
-        }
-
         Ok(())
     }
 
@@ -162,12 +126,12 @@ impl Database {
             params![
                 stats.lesson_id,
                 lesson_title,
-                stats.wpm,
-                stats.cpm,
-                stats.accuracy,
+                stats.overall_wpm,
+                stats.overall_cpm,
+                stats.overall_accuracy,
                 stats.total_keystrokes,
                 stats.error_count,
-                stats.duration.as_secs() as i64,
+                stats.duration_secs as i64,
                 stats.timestamp,
             ],
         )?;

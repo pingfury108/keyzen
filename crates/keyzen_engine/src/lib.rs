@@ -246,8 +246,8 @@ impl TypingSession {
             cpm / 5.0
         };
 
-        // 统计薄弱按键
-        let weak_keys = self.calculate_weak_keys();
+        // 根据语言类型提取薄弱单元
+        let weak_units = self.extract_weak_units();
 
         SessionStats {
             lesson_id: self.lesson.id,
@@ -258,31 +258,161 @@ impl TypingSession {
             error_count: self.error_positions.len(),
             duration,
             timestamp: chrono::Utc::now().timestamp(),
-            weak_keys,
+            weak_units,
         }
     }
 
-    fn calculate_weak_keys(&self) -> Vec<(char, f32)> {
-        let mut key_stats: HashMap<char, (usize, usize)> = HashMap::new();
+    /// 根据课程语言类型提取薄弱单元
+    fn extract_weak_units(&self) -> Vec<WeakUnit> {
+        match self.language.as_str() {
+            lang if lang.starts_with("zh-") => self.extract_chinese_weak_units(),
+            lang if lang.starts_with("en-") => self.extract_english_weak_units(),
+            "rust" | "python" | "javascript" => self.extract_code_weak_units(),
+            _ => self.extract_character_weak_units(), // 默认字符级别
+        }
+    }
 
-        for (i, &ch) in self.target_chars.iter().enumerate() {
-            let entry = key_stats.entry(ch).or_insert((0, 0));
+    /// 中文：提取单字符（汉字）和常见双字词组
+    fn extract_chinese_weak_units(&self) -> Vec<WeakUnit> {
+        let mut unit_stats: HashMap<String, (usize, usize, UnitType)> = HashMap::new();
+
+        // 1. 单字符统计
+        for (i, &target_char) in self.target_chars.iter().enumerate() {
+            let key = target_char.to_string();
+            let entry = unit_stats
+                .entry(key)
+                .or_insert((0, 0, UnitType::Character));
             entry.0 += 1; // 总次数
             if self.error_positions.contains(&i) {
                 entry.1 += 1; // 错误次数
             }
         }
 
-        let mut weak: Vec<_> = key_stats
+        // 2. 双字词组统计（可选）
+        for i in 0..self.target_chars.len().saturating_sub(1) {
+            let c1 = self.target_chars[i];
+            let c2 = self.target_chars[i + 1];
+
+            // 只统计双汉字组合
+            if c1.is_ascii() || c2.is_ascii() || c1.is_whitespace() || c2.is_whitespace() {
+                continue;
+            }
+
+            let phrase = format!("{}{}", c1, c2);
+            let has_error = self.error_positions.contains(&i) || self.error_positions.contains(&(i + 1));
+
+            let entry = unit_stats
+                .entry(phrase)
+                .or_insert((0, 0, UnitType::Phrase));
+            entry.0 += 1;
+            if has_error {
+                entry.1 += 1;
+            }
+        }
+
+        self.build_weak_units_from_stats(unit_stats)
+    }
+
+    /// 英文：提取单词级别
+    fn extract_english_weak_units(&self) -> Vec<WeakUnit> {
+        let mut unit_stats: HashMap<String, (usize, usize, UnitType)> = HashMap::new();
+
+        // 分词逻辑
+        let target_text = self.target_chars.iter().collect::<String>();
+        let words: Vec<&str> = target_text.split_whitespace().collect();
+
+        let mut char_offset = 0;
+        for word in words {
+            let word_start = char_offset;
+            let word_end = char_offset + word.len();
+
+            // 检查该单词是否有错误
+            let has_error = (word_start..word_end).any(|i| self.error_positions.contains(&i));
+
+            let entry = unit_stats
+                .entry(word.to_string())
+                .or_insert((0, 0, UnitType::Word));
+            entry.0 += 1;
+            if has_error {
+                entry.1 += 1;
+            }
+
+            // 跳过单词和后面的空格
+            char_offset = word_end;
+            // 查找下一个非空白字符的位置
+            while char_offset < self.target_chars.len()
+                && self.target_chars[char_offset].is_whitespace()
+            {
+                char_offset += 1;
+            }
+        }
+
+        // 同时也统计字符级别（用于特殊字符和标点）
+        for (i, &target_char) in self.target_chars.iter().enumerate() {
+            // 只统计非字母数字的字符
+            if !target_char.is_alphanumeric() && !target_char.is_whitespace() {
+                let key = target_char.to_string();
+                let entry = unit_stats
+                    .entry(key)
+                    .or_insert((0, 0, UnitType::Character));
+                entry.0 += 1;
+                if self.error_positions.contains(&i) {
+                    entry.1 += 1;
+                }
+            }
+        }
+
+        self.build_weak_units_from_stats(unit_stats)
+    }
+
+    /// 代码：提取字符级别（可扩展为 token 级别）
+    fn extract_code_weak_units(&self) -> Vec<WeakUnit> {
+        // 暂时使用字符级别，后续可扩展为 token 级别
+        self.extract_character_weak_units()
+    }
+
+    /// 默认：字符级别统计
+    fn extract_character_weak_units(&self) -> Vec<WeakUnit> {
+        let mut unit_stats: HashMap<String, (usize, usize, UnitType)> = HashMap::new();
+
+        for (i, &target_char) in self.target_chars.iter().enumerate() {
+            let key = target_char.to_string();
+            let entry = unit_stats
+                .entry(key)
+                .or_insert((0, 0, UnitType::Character));
+            entry.0 += 1;
+            if self.error_positions.contains(&i) {
+                entry.1 += 1;
+            }
+        }
+
+        self.build_weak_units_from_stats(unit_stats)
+    }
+
+    /// 从统计数据构建 WeakUnit 列表
+    fn build_weak_units_from_stats(
+        &self,
+        stats: HashMap<String, (usize, usize, UnitType)>,
+    ) -> Vec<WeakUnit> {
+        let mut units: Vec<WeakUnit> = stats
             .into_iter()
-            .filter(|(_, (total, _))| *total >= 3) // 至少出现 3 次
-            .map(|(ch, (total, errors))| (ch, errors as f32 / total as f32))
-            .filter(|(_, rate)| *rate > 0.2) // 错误率 > 20%
+            .filter(|(_, (total, _, _))| *total >= 3) // 至少出现 3 次
+            .map(|(content, (total, errors, unit_type))| {
+                let error_rate = errors as f32 / total as f32;
+                WeakUnit {
+                    content,
+                    unit_type,
+                    error_count: errors,
+                    total_count: total,
+                    error_rate,
+                }
+            })
+            .filter(|unit| unit.error_rate > 0.15) // 错误率 > 15%
             .collect();
 
-        weak.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        weak.truncate(5); // 只保留前 5 个
-        weak
+        units.sort_by(|a, b| b.error_rate.partial_cmp(&a.error_rate).unwrap());
+        units.truncate(10); // 保留前 10 个
+        units
     }
 
     /// 获取 UI 渲染用的快照

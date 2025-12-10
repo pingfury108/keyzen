@@ -454,8 +454,8 @@ impl KeyzenApp {
                 avg_accuracy: 0.0,
             }
         });
-        // 获取薄弱按键数据
-        let weak_keys = self.database.get_overall_weak_keys(10).unwrap_or_default();
+        // 获取薄弱单元数据（词云）
+        let weak_units = self.database.get_overall_weak_units(20).unwrap_or_default();
 
         div()
             .flex()
@@ -591,80 +591,30 @@ impl KeyzenApp {
                             ),
                     ),
             )
-            .child(
-                // 薄弱按键分析卡片
-                div()
-                    .w_full()
-                    .p_6()
-                    .bg(colors.bg_secondary)
-                    .rounded(px(12.0))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_4()
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(colors.text_primary)
-                                    .child("薄弱按键分析"),
-                            )
-                            .child(if weak_keys.is_empty() {
-                                div()
-                                    .text_size(px(14.0))
-                                    .text_color(colors.text_muted)
-                                    .child("暂无数据")
-                            } else {
-                                div().flex().flex_wrap().gap_3().children(
-                                    weak_keys.into_iter().map(|weak_key| {
-                                        // 根据错误率设置颜色
-                                        let color = if weak_key.error_rate > 0.5 {
-                                            rgb(0xFF6B6B) // 红色 - 高错误率
-                                        } else if weak_key.error_rate > 0.3 {
-                                            rgb(0xFFB86C) // 橙色 - 中错误率
-                                        } else {
-                                            rgb(0xFFD93D) // 黄色 - 低错误率
-                                        };
-
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_4()
-                                            .py_3()
-                                            .bg(colors.bg_primary)
-                                            .rounded(px(8.0))
-                                            .child(
-                                                div()
-                                                    .text_size(px(24.0))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .text_color(color)
-                                                    .child(if weak_key.key_char == ' ' {
-                                                        "␣".to_string()
-                                                    } else if weak_key.key_char == '\n' {
-                                                        "↵".to_string()
-                                                    } else if weak_key.key_char == '\t' {
-                                                        "⇥".to_string()
-                                                    } else {
-                                                        weak_key.key_char.to_string()
-                                                    }),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.0))
-                                                    .text_color(colors.text_secondary)
-                                                    .child(format!(
-                                                        "{:.0}%",
-                                                        weak_key.error_rate * 100.0
-                                                    )),
-                                            )
-                                    }),
+            .when(!weak_units.is_empty(), |this| {
+                this.child(
+                    // 薄弱模式词云（仅在有数据时显示）
+                    div()
+                        .w_full()
+                        .p_6()
+                        .bg(colors.bg_secondary)
+                        .rounded(px(12.0))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_4()
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(colors.text_primary)
+                                        .child("薄弱模式识别"),
                                 )
-                            }),
-                    ),
-            )
+                                .child(self.render_word_cloud(weak_units, &colors))
+                        ),
+                )
+            })
             .child(
                 // 最近练习记录标题
                 div()
@@ -1112,6 +1062,101 @@ impl KeyzenApp {
                     ),
             )
             .into_any()
+    }
+
+    /// 渲染词云组件
+    fn render_word_cloud(&self, weak_units: Vec<WeakUnit>, colors: &ThemeColors) -> impl IntoElement {
+        // 计算字体大小范围
+        let max_error_rate = weak_units
+            .iter()
+            .map(|u| u.error_rate)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(1.0);
+
+        let min_error_rate = weak_units
+            .iter()
+            .map(|u| u.error_rate)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0);
+
+        // 渲染词云
+        div()
+            .flex()
+            .flex_wrap() // 关键：自动换行
+            .gap_3()
+            .justify_center()
+            .items_center()
+            .p_4()
+            .children(weak_units.into_iter().map(|unit| {
+                self.render_word_cloud_item(unit, min_error_rate, max_error_rate, colors)
+            }))
+    }
+
+    /// 渲染单个词云项
+    fn render_word_cloud_item(
+        &self,
+        unit: WeakUnit,
+        min_error_rate: f32,
+        max_error_rate: f32,
+        colors: &ThemeColors,
+    ) -> impl IntoElement {
+        // 1. 计算字体大小（线性映射 14px ~ 32px）
+        let normalized = if max_error_rate > min_error_rate {
+            (unit.error_rate - min_error_rate) / (max_error_rate - min_error_rate)
+        } else {
+            1.0
+        };
+        let font_size = 14.0 + normalized * 18.0; // 14px ~ 32px
+
+        // 2. 计算颜色（错误率越高颜色越深）
+        let color = if unit.error_rate > 0.5 {
+            rgb(0xFF4757) // 深红
+        } else if unit.error_rate > 0.35 {
+            rgb(0xFF6B6B) // 红色
+        } else if unit.error_rate > 0.25 {
+            rgb(0xFFB86C) // 橙色
+        } else {
+            rgb(0xFFD93D) // 黄色
+        };
+
+        // 3. 格式化显示内容
+        let display_content = match unit.content.as_str() {
+            " " => "␣".to_string(),
+            "\n" => "↵".to_string(),
+            "\t" => "⇥".to_string(),
+            _ => unit.content.clone(),
+        };
+
+        // 5. 渲染
+        div()
+            .px_3()
+            .py_2()
+            .bg(colors.bg_primary.opacity(0.5))
+            .rounded(px(8.0))
+            .hover(|style| style.bg(colors.bg_hover))
+            .cursor_pointer()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        // 内容文字
+                        div()
+                            .text_size(px(font_size))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(color)
+                            .child(display_content),
+                    )
+                    .child(
+                        // 错误率标签（小字）
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(colors.text_muted)
+                            .child(format!("{:.0}%", unit.error_rate * 100.0)),
+                    ),
+            )
     }
 
     fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {

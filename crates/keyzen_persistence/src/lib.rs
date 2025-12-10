@@ -1,5 +1,5 @@
 use anyhow::Result;
-use keyzen_core::SessionStats;
+use keyzen_core::{SessionStats, UnitType, WeakUnit};
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -64,12 +64,15 @@ impl Database {
             [],
         )?;
 
-        // 薄弱按键表
+        // 薄弱单元表（新表结构）
         self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS weak_keys (
+            "CREATE TABLE IF NOT EXISTS weak_units (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                key_char TEXT NOT NULL,
+                content TEXT NOT NULL,
+                unit_type TEXT NOT NULL,
+                error_count INTEGER NOT NULL,
+                total_count INTEGER NOT NULL,
                 error_rate REAL NOT NULL,
                 FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             )",
@@ -97,9 +100,54 @@ impl Database {
         )?;
 
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_weak_keys_session_id ON weak_keys(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_weak_units_session_id ON weak_units(session_id)",
             [],
         )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_weak_units_error_rate ON weak_units(error_rate DESC)",
+            [],
+        )?;
+
+        // 数据迁移：如果旧的 weak_keys 表存在，迁移数据
+        self.migrate_weak_keys_to_units()?;
+
+        Ok(())
+    }
+
+    /// 迁移旧的 weak_keys 数据到新的 weak_units 表
+    fn migrate_weak_keys_to_units(&self) -> Result<()> {
+        // 检查 weak_keys 表是否存在
+        let table_exists: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='weak_keys'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0) > 0;
+
+        if table_exists {
+            // 迁移数据（将单字符作为 character 类型，根据 error_rate 反推计数）
+            self.conn.execute(
+                "INSERT INTO weak_units (session_id, content, unit_type, error_count, total_count, error_rate)
+                 SELECT
+                     session_id,
+                     key_char,
+                     'character',
+                     -- 假设至少出现 3 次，根据错误率计算错误次数
+                     CAST(ROUND(error_rate * 3) AS INTEGER),
+                     3,
+                     error_rate
+                 FROM weak_keys
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM weak_units wu
+                     WHERE wu.session_id = weak_keys.session_id
+                     AND wu.content = weak_keys.key_char
+                 )",
+                [],
+            )?;
+
+            // 删除旧表（可选，保留以防万一）
+            // self.conn.execute("DROP TABLE weak_keys", [])?;
+        }
 
         Ok(())
     }
@@ -126,15 +174,31 @@ impl Database {
 
         let session_id = self.conn.last_insert_rowid();
 
-        // 保存薄弱按键
-        for (key_char, error_rate) in &stats.weak_keys {
-            self.conn.execute(
-                "INSERT INTO weak_keys (session_id, key_char, error_rate) VALUES (?1, ?2, ?3)",
-                params![session_id, key_char.to_string(), error_rate],
-            )?;
-        }
+        // 保存薄弱单元
+        self.save_weak_units(session_id, &stats.weak_units)?;
 
         Ok(session_id)
+    }
+
+    /// 保存薄弱单元
+    pub fn save_weak_units(&self, session_id: i64, units: &[WeakUnit]) -> Result<()> {
+        let mut stmt = self.conn.prepare(
+            "INSERT INTO weak_units (session_id, content, unit_type, error_count, total_count, error_rate)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        )?;
+
+        for unit in units {
+            stmt.execute(params![
+                session_id,
+                &unit.content,
+                unit.unit_type.as_str(),
+                unit.error_count,
+                unit.total_count,
+                unit.error_rate,
+            ])?;
+        }
+
+        Ok(())
     }
 
     /// 获取最近的练习记录
@@ -198,44 +262,89 @@ impl Database {
         Ok(sessions)
     }
 
-    /// 获取会话的薄弱按键
-    pub fn get_weak_keys(&self, session_id: i64) -> Result<Vec<WeakKey>> {
+    /// 获取会话的薄弱单元
+    pub fn get_weak_units(&self, session_id: i64) -> Result<Vec<WeakUnit>> {
         let mut stmt = self.conn.prepare(
-            "SELECT key_char, error_rate FROM weak_keys WHERE session_id = ?1 ORDER BY error_rate DESC",
+            "SELECT content, unit_type, error_count, total_count, error_rate
+             FROM weak_units
+             WHERE session_id = ?1
+             ORDER BY error_rate DESC",
         )?;
 
-        let keys = stmt
+        let units = stmt
             .query_map([session_id], |row| {
-                Ok(WeakKey {
-                    key_char: row.get::<_, String>(0)?.chars().next().unwrap_or(' '),
-                    error_rate: row.get(1)?,
+                let unit_type_str: String = row.get(1)?;
+                Ok(WeakUnit {
+                    content: row.get(0)?,
+                    unit_type: UnitType::from_str(&unit_type_str),
+                    error_count: row.get(2)?,
+                    total_count: row.get(3)?,
+                    error_rate: row.get(4)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(keys)
+        Ok(units)
     }
 
-    /// 获取所有会话的薄弱按键汇总（按平均错误率排序）
-    pub fn get_overall_weak_keys(&self, limit: usize) -> Result<Vec<WeakKey>> {
+    /// 获取所有会话的薄弱单元汇总（按错误率排序）
+    pub fn get_overall_weak_units(&self, limit: usize) -> Result<Vec<WeakUnit>> {
         let mut stmt = self.conn.prepare(
-            "SELECT key_char, AVG(error_rate) as avg_error_rate
-             FROM weak_keys
-             GROUP BY key_char
+            "SELECT content, unit_type,
+                    SUM(error_count) as total_errors,
+                    SUM(total_count) as total_occurrences,
+                    CAST(SUM(error_count) AS REAL) / CAST(SUM(total_count) AS REAL) as avg_error_rate
+             FROM weak_units
+             GROUP BY content, unit_type
+             HAVING total_occurrences >= 1 AND avg_error_rate > 0.10
              ORDER BY avg_error_rate DESC
              LIMIT ?1",
         )?;
 
-        let keys = stmt
+        let units = stmt
             .query_map([limit], |row| {
-                Ok(WeakKey {
-                    key_char: row.get::<_, String>(0)?.chars().next().unwrap_or(' '),
-                    error_rate: row.get(1)?,
+                let unit_type_str: String = row.get(1)?;
+                Ok(WeakUnit {
+                    content: row.get(0)?,
+                    unit_type: UnitType::from_str(&unit_type_str),
+                    error_count: row.get(2)?,
+                    total_count: row.get(3)?,
+                    error_rate: row.get(4)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(keys)
+        Ok(units)
+    }
+
+    /// 获取会话的薄弱按键（兼容旧 API）
+    #[deprecated(note = "使用 get_weak_units 代替")]
+    pub fn get_weak_keys(&self, session_id: i64) -> Result<Vec<WeakKey>> {
+        let units = self.get_weak_units(session_id)?;
+        Ok(units
+            .into_iter()
+            .filter_map(|unit| {
+                unit.content.chars().next().map(|ch| WeakKey {
+                    key_char: ch,
+                    error_rate: unit.error_rate,
+                })
+            })
+            .collect())
+    }
+
+    /// 获取所有会话的薄弱按键汇总（兼容旧 API）
+    #[deprecated(note = "使用 get_overall_weak_units 代替")]
+    pub fn get_overall_weak_keys(&self, limit: usize) -> Result<Vec<WeakKey>> {
+        let units = self.get_overall_weak_units(limit)?;
+        Ok(units
+            .into_iter()
+            .filter_map(|unit| {
+                unit.content.chars().next().map(|ch| WeakKey {
+                    key_char: ch,
+                    error_rate: unit.error_rate,
+                })
+            })
+            .collect())
     }
 
     /// 获取所有时间的统计数据
@@ -354,7 +463,22 @@ mod tests {
             error_count: 5,
             duration: Duration::from_secs(60),
             timestamp: Utc::now().timestamp(),
-            weak_keys: vec![('a', 0.3), ('s', 0.2)],
+            weak_units: vec![
+                WeakUnit {
+                    content: "a".to_string(),
+                    unit_type: UnitType::Character,
+                    error_count: 3,
+                    total_count: 10,
+                    error_rate: 0.3,
+                },
+                WeakUnit {
+                    content: "s".to_string(),
+                    unit_type: UnitType::Character,
+                    error_count: 2,
+                    total_count: 10,
+                    error_rate: 0.2,
+                },
+            ],
         };
 
         let session_id = db.save_session(&stats, "Test Lesson").unwrap();
@@ -365,7 +489,7 @@ mod tests {
         assert_eq!(sessions[0].lesson_title, "Test Lesson");
         assert_eq!(sessions[0].wpm, 45.5);
 
-        let weak_keys = db.get_weak_keys(session_id).unwrap();
-        assert_eq!(weak_keys.len(), 2);
+        let weak_units = db.get_weak_units(session_id).unwrap();
+        assert_eq!(weak_units.len(), 2);
     }
 }

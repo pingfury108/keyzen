@@ -90,6 +90,65 @@ pub enum TypingEvent {
     },
 }
 
+/// 统计单元类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnitType {
+    Character, // 单字符（包括单个汉字）
+    Word,      // 单词（英文）
+    Phrase,    // 短语/词组（中文）
+    Token,     // 代码 token（函数名、关键字等）
+}
+
+impl UnitType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UnitType::Character => "character",
+            UnitType::Word => "word",
+            UnitType::Phrase => "phrase",
+            UnitType::Token => "token",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "word" => UnitType::Word,
+            "phrase" => UnitType::Phrase,
+            "token" => UnitType::Token,
+            _ => UnitType::Character,
+        }
+    }
+}
+
+/// 薄弱单元
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeakUnit {
+    pub content: String,     // 内容（可以是单字符或多字符）
+    pub unit_type: UnitType, // 单元类型
+    pub error_count: usize,  // 错误次数
+    pub total_count: usize,  // 总出现次数
+    pub error_rate: f32,     // 错误率
+}
+
+impl WeakUnit {
+    pub fn new(content: String, unit_type: UnitType) -> Self {
+        Self {
+            content,
+            unit_type,
+            error_count: 0,
+            total_count: 0,
+            error_rate: 0.0,
+        }
+    }
+
+    pub fn calculate_error_rate(&mut self) {
+        if self.total_count == 0 {
+            self.error_rate = 0.0;
+        } else {
+            self.error_rate = self.error_count as f32 / self.total_count as f32;
+        }
+    }
+}
+
 /// 会话统计数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStats {
@@ -102,7 +161,7 @@ pub struct SessionStats {
     #[serde(with = "duration_serde")]
     pub duration: Duration,
     pub timestamp: i64,
-    pub weak_keys: Vec<(char, f32)>,
+    pub weak_units: Vec<WeakUnit>, // 修改为 WeakUnit
 }
 
 // Duration 序列化辅助模块

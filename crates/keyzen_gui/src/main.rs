@@ -167,12 +167,11 @@ impl SessionModel {
             self.session.handle_keystroke(ch);
             cx.notify();
 
-            // 检查当前练习是否完成
-            if self.session.is_current_exercise_complete() {
-                // 尝试跳转到下一个练习
+            // 检查当前练习是否完成且无错误，才自动跳转
+            if self.session.is_current_exercise_complete() && !self.session.current_exercise_has_errors() {
                 if self.session.has_next_exercise() {
                     self.session.advance_to_next_exercise();
-                    debug!("⏭️  自动跳转到下一个练习");
+                    debug!("✅ 练习无错误，自动跳转到下一个练习");
                     cx.notify();
                 }
             }
@@ -1679,12 +1678,11 @@ impl EntityInputHandler for KeyzenApp {
                 session.update(cx, |session_model, cx| {
                     session_model.handle_keystroke(&ch.to_string(), cx);
 
-                    // 检查当前练习是否完成
-                    if session_model.session.is_current_exercise_complete() {
-                        // 尝试跳转到下一个练习
+                    // 检查当前练习是否完成且无错误，才自动跳转
+                    if session_model.session.is_current_exercise_complete() && !session_model.session.current_exercise_has_errors() {
                         if session_model.session.has_next_exercise() {
                             session_model.session.advance_to_next_exercise();
-                            debug!("⏭️  自动跳转到下一个练习");
+                            debug!("✅ 练习无错误，自动跳转到下一个练习");
                         }
                     }
                 });

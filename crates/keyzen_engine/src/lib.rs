@@ -112,6 +112,11 @@ impl TypingSession {
         self.current_position >= self.target_chars.len()
     }
 
+    /// 检查当前练习是否有错误
+    pub fn current_exercise_has_errors(&self) -> bool {
+        !self.error_positions.is_empty()
+    }
+
     /// 完成当前练习，进入下一个
     pub fn advance_to_next_exercise(&mut self) -> bool {
         // 1. 生成当前练习的统计
@@ -407,12 +412,6 @@ impl TypingSession {
             if ch == ' ' || ch == '\n' {
                 let wpm = self.calculate_current_wpm();
                 self.send_event(TypingEvent::WordCompleted { wpm });
-            }
-
-            // 检查是否完成课程
-            if self.current_position >= self.target_chars.len() {
-                let stats = self.finalize_session();
-                self.send_event(TypingEvent::SessionCompleted { stats });
             }
         } else {
             // 错误处理
@@ -759,6 +758,21 @@ impl TypingSession {
 
     /// 获取 UI 渲染用的快照
     pub fn get_snapshot(&self) -> SessionSnapshot {
+        // 计算整个 session 的进度（所有练习）
+        let total_exercises = self.lesson.exercises.len();
+        let completed_exercises = self.exercise_stats.len();
+        let current_exercise_progress = if !self.target_chars.is_empty() {
+            self.current_position as f32 / self.target_chars.len() as f32
+        } else {
+            0.0
+        };
+
+        let overall_progress = if total_exercises > 0 {
+            (completed_exercises as f32 + current_exercise_progress) / total_exercises as f32
+        } else {
+            0.0
+        };
+
         SessionSnapshot {
             cursor_position: self.current_position,
             recent_errors: self
@@ -773,11 +787,7 @@ impl TypingSession {
             } else {
                 1.0
             },
-            progress: if !self.target_chars.is_empty() {
-                self.current_position as f32 / self.target_chars.len() as f32
-            } else {
-                0.0
-            },
+            progress: overall_progress,
         }
     }
 

@@ -15,8 +15,8 @@ pub struct TypingSession {
     language: String, // 课程语言，用于统计计算
 
     // 新增：练习进度管理
-    current_exercise_index: usize,       // 当前练习索引 (0-based)
-    exercise_stats: Vec<ExerciseStats>,  // 已完成练习的统计
+    current_exercise_index: usize,      // 当前练习索引 (0-based)
+    exercise_stats: Vec<ExerciseStats>, // 已完成练习的统计
 
     // 当前练习的输入状态
     target_chars: Vec<char>,
@@ -41,7 +41,10 @@ impl TypingSession {
         event_tx: Option<mpsc::Sender<TypingEvent>>,
     ) -> Self {
         // 从第一个练习初始化
-        assert!(!lesson.exercises.is_empty(), "Lesson must have at least one exercise");
+        assert!(
+            !lesson.exercises.is_empty(),
+            "Lesson must have at least one exercise"
+        );
         let first_exercise = &lesson.exercises[0];
         let target_chars: Vec<char> = first_exercise.content.chars().collect();
         let language = lesson.language.clone();
@@ -176,7 +179,10 @@ impl TypingSession {
         self.get_target_text()
             .chars()
             .map(|ch| {
-                if ch.is_whitespace() || ch.is_ascii_punctuation() || "，。！？；：\"\"''（）【】《》、".contains(ch) {
+                if ch.is_whitespace()
+                    || ch.is_ascii_punctuation()
+                    || "，。！？；：\"\"''（）【】《》、".contains(ch)
+                {
                     ch
                 } else {
                     '_'
@@ -620,9 +626,7 @@ impl TypingSession {
         // 1. 单字符统计
         for (i, &target_char) in self.target_chars.iter().enumerate() {
             let key = target_char.to_string();
-            let entry = unit_stats
-                .entry(key)
-                .or_insert((0, 0, UnitType::Character));
+            let entry = unit_stats.entry(key).or_insert((0, 0, UnitType::Character));
             entry.0 += 1; // 总次数
             if self.error_positions.contains(&i) {
                 entry.1 += 1; // 错误次数
@@ -640,11 +644,10 @@ impl TypingSession {
             }
 
             let phrase = format!("{}{}", c1, c2);
-            let has_error = self.error_positions.contains(&i) || self.error_positions.contains(&(i + 1));
+            let has_error =
+                self.error_positions.contains(&i) || self.error_positions.contains(&(i + 1));
 
-            let entry = unit_stats
-                .entry(phrase)
-                .or_insert((0, 0, UnitType::Phrase));
+            let entry = unit_stats.entry(phrase).or_insert((0, 0, UnitType::Phrase));
             entry.0 += 1;
             if has_error {
                 entry.1 += 1;
@@ -693,9 +696,7 @@ impl TypingSession {
             // 只统计非字母数字的字符
             if !target_char.is_alphanumeric() && !target_char.is_whitespace() {
                 let key = target_char.to_string();
-                let entry = unit_stats
-                    .entry(key)
-                    .or_insert((0, 0, UnitType::Character));
+                let entry = unit_stats.entry(key).or_insert((0, 0, UnitType::Character));
                 entry.0 += 1;
                 if self.error_positions.contains(&i) {
                     entry.1 += 1;
@@ -718,9 +719,7 @@ impl TypingSession {
 
         for (i, &target_char) in self.target_chars.iter().enumerate() {
             let key = target_char.to_string();
-            let entry = unit_stats
-                .entry(key)
-                .or_insert((0, 0, UnitType::Character));
+            let entry = unit_stats.entry(key).or_insert((0, 0, UnitType::Character));
             entry.0 += 1;
             if self.error_positions.contains(&i) {
                 entry.1 += 1;

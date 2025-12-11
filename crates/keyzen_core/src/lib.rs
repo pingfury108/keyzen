@@ -98,7 +98,7 @@ impl Exercise {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExerciseStats {
     pub exercise_index: usize,
-    pub content_preview: String,  // 前 20 个字符作为预览
+    pub content_preview: String, // 前 20 个字符作为预览
     pub wpm: f64,
     pub accuracy: f64,
     pub total_keystrokes: usize,
@@ -107,7 +107,15 @@ pub struct ExerciseStats {
 }
 
 impl ExerciseStats {
-    pub fn from_exercise(exercise: &Exercise, index: usize, wpm: f64, accuracy: f64, keystrokes: usize, errors: usize, duration: Duration) -> Self {
+    pub fn from_exercise(
+        exercise: &Exercise,
+        index: usize,
+        wpm: f64,
+        accuracy: f64,
+        keystrokes: usize,
+        errors: usize,
+        duration: Duration,
+    ) -> Self {
         Self {
             exercise_index: index,
             content_preview: {

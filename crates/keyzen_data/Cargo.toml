@@ -9,3 +9,7 @@ keyzen_core.workspace = true
 serde.workspace = true
 ron.workspace = true
 anyhow.workspace = true
+notify = "6.1"
+dirs = "5.0"
+log = "0.4"
+rust-embed = { version = "8.5", features = ["include-exclude"] }

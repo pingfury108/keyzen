@@ -6,7 +6,7 @@ use keyzen_engine::TypingSession;
 use keyzen_persistence::{Database, SessionRecord};
 use log::debug;
 use std::ops::Range;
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 
 // 定义 Actions
 actions!(
@@ -38,6 +38,8 @@ struct ThemeColors {
 struct KeyzenApp {
     session: Option<Entity<SessionModel>>,
     lessons: Vec<Lesson>,
+    lesson_loader: LessonLoader,
+    needs_reload: Arc<Mutex<bool>>, // 标记是否需要重新加载
     selected_lesson: Option<usize>,
     focus_handle: FocusHandle,
     database: Arc<Database>,
@@ -168,7 +170,9 @@ impl SessionModel {
             cx.notify();
 
             // 检查当前练习是否完成且无错误，才自动跳转
-            if self.session.is_current_exercise_complete() && !self.session.current_exercise_has_errors() {
+            if self.session.is_current_exercise_complete()
+                && !self.session.current_exercise_has_errors()
+            {
                 if self.session.has_next_exercise() {
                     self.session.advance_to_next_exercise();
                     debug!("✅ 练习无错误，自动跳转到下一个练习");
@@ -202,12 +206,21 @@ impl SessionModel {
 
 impl KeyzenApp {
     fn new(cx: &mut Context<Self>) -> Self {
-        let loader = LessonLoader::new("./lessons");
+        let loader = LessonLoader::new("./lessons").unwrap_or_else(|e| {
+            eprintln!("❌ 初始化课程加载器失败: {}", e);
+            panic!("无法初始化课程加载器");
+        });
+
         let lessons = match loader.load_all() {
             Ok(lessons) => {
                 debug!("✅ 成功加载 {} 个课程", lessons.len());
                 for lesson in &lessons {
-                    debug!("  - [{}] {}: {} 个练习", lesson.id, lesson.title, lesson.exercises.len());
+                    debug!(
+                        "  - [{}] {}: {} 个练习",
+                        lesson.id,
+                        lesson.title,
+                        lesson.exercises.len()
+                    );
                 }
                 lessons
             }
@@ -255,9 +268,14 @@ impl KeyzenApp {
             })
             .unwrap_or(MemoryMode::Off); // 默认关闭
 
-        Self {
+        let needs_reload = Arc::new(Mutex::new(false));
+        let needs_reload_clone = needs_reload.clone();
+
+        let mut app = Self {
             session: None,
             lessons,
+            lesson_loader: loader,
+            needs_reload,
             selected_lesson: None,
             focus_handle: cx.focus_handle(),
             database,
@@ -268,6 +286,42 @@ impl KeyzenApp {
             completion_snapshot: None,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
+        };
+
+        // 启动文件监听
+        if let Err(e) = app.lesson_loader.start_watching(move || {
+            *needs_reload_clone.lock().unwrap() = true;
+            debug!("📂 检测到用户课程文件变化，标记需要重新加载");
+        }) {
+            eprintln!("⚠️  启动课程文件监听失败: {}", e);
+        }
+
+        app
+    }
+
+    /// 重新加载课程
+    fn reload_lessons(&mut self, cx: &mut Context<Self>) {
+        debug!("🔄 重新加载课程...");
+
+        match self.lesson_loader.load_all() {
+            Ok(new_lessons) => {
+                self.lessons = new_lessons;
+                debug!("✅ 课程已重新加载: {} 个", self.lessons.len());
+
+                // 如果当前正在练习的课程索引超出范围，返回主页
+                if let Some(idx) = self.selected_lesson {
+                    if idx >= self.lessons.len() {
+                        self.session = None;
+                        self.selected_lesson = None;
+                        debug!("⚠️  当前课程已失效，返回主页");
+                    }
+                }
+
+                cx.notify();
+            }
+            Err(e) => {
+                eprintln!("❌ 重新加载课程失败: {}", e);
+            }
         }
     }
 
@@ -813,20 +867,21 @@ impl KeyzenApp {
     fn render_practice_area(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.get_colors();
 
-        let (snapshot, target_text, display_text, input_text, progress, current_exercise) = if let Some(session) = &self.session {
-            let session_read = session.read(cx);
-            let (current, total) = session_read.session.get_progress();
-            (
-                session_read.get_snapshot(),
-                session_read.get_target_text().to_string(),
-                session_read.generate_display_text(self.memory_mode),
-                session_read.get_input_text(),
-                (current, total),
-                session_read.session.get_current_exercise().clone(),
-            )
-        } else {
-            return div().into_any();
-        };
+        let (snapshot, target_text, display_text, input_text, progress, current_exercise) =
+            if let Some(session) = &self.session {
+                let session_read = session.read(cx);
+                let (current, total) = session_read.session.get_progress();
+                (
+                    session_read.get_snapshot(),
+                    session_read.get_target_text().to_string(),
+                    session_read.generate_display_text(self.memory_mode),
+                    session_read.get_input_text(),
+                    (current, total),
+                    session_read.session.get_current_exercise().clone(),
+                )
+            } else {
+                return div().into_any();
+            };
 
         let target_chars: Vec<char> = target_text.chars().collect();
         let display_chars: Vec<char> = display_text.chars().collect();
@@ -874,17 +929,29 @@ impl KeyzenApp {
                                 div()
                                     .px_3()
                                     .py_1()
-                                    .bg(if progress.0 > 0 { colors.bg_secondary } else { colors.bg_primary })
-                                    .when(progress.0 > 0, |el| el.hover(|style| style.bg(colors.bg_hover)))
+                                    .bg(if progress.0 > 0 {
+                                        colors.bg_secondary
+                                    } else {
+                                        colors.bg_primary
+                                    })
+                                    .when(progress.0 > 0, |el| {
+                                        el.hover(|style| style.bg(colors.bg_hover))
+                                    })
                                     .rounded(px(6.0))
-                                    .cursor(if progress.0 > 0 { gpui::CursorStyle::PointingHand } else { gpui::CursorStyle::Arrow })
+                                    .cursor(if progress.0 > 0 {
+                                        gpui::CursorStyle::PointingHand
+                                    } else {
+                                        gpui::CursorStyle::Arrow
+                                    })
                                     .when(progress.0 > 0, |el| {
                                         el.on_mouse_down(
                                             MouseButton::Left,
                                             cx.listener(|this, _event, _window, cx| {
                                                 if let Some(session) = &this.session {
                                                     session.update(cx, |session_model, cx| {
-                                                        session_model.session.go_to_previous_exercise();
+                                                        session_model
+                                                            .session
+                                                            .go_to_previous_exercise();
                                                         cx.notify();
                                                     });
                                                 }
@@ -894,7 +961,11 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(13.0))
-                                            .text_color(if progress.0 > 0 { colors.text_secondary } else { colors.text_muted })
+                                            .text_color(if progress.0 > 0 {
+                                                colors.text_secondary
+                                            } else {
+                                                colors.text_muted
+                                            })
                                             .child("← 上一个"),
                                     ),
                             )
@@ -910,10 +981,20 @@ impl KeyzenApp {
                                 div()
                                     .px_3()
                                     .py_1()
-                                    .bg(if progress.0 + 1 < progress.1 { colors.bg_secondary } else { colors.bg_primary })
-                                    .when(progress.0 + 1 < progress.1, |el| el.hover(|style| style.bg(colors.bg_hover)))
+                                    .bg(if progress.0 + 1 < progress.1 {
+                                        colors.bg_secondary
+                                    } else {
+                                        colors.bg_primary
+                                    })
+                                    .when(progress.0 + 1 < progress.1, |el| {
+                                        el.hover(|style| style.bg(colors.bg_hover))
+                                    })
                                     .rounded(px(6.0))
-                                    .cursor(if progress.0 + 1 < progress.1 { gpui::CursorStyle::PointingHand } else { gpui::CursorStyle::Arrow })
+                                    .cursor(if progress.0 + 1 < progress.1 {
+                                        gpui::CursorStyle::PointingHand
+                                    } else {
+                                        gpui::CursorStyle::Arrow
+                                    })
                                     .when(progress.0 + 1 < progress.1, |el| {
                                         el.on_mouse_down(
                                             MouseButton::Left,
@@ -930,7 +1011,11 @@ impl KeyzenApp {
                                     .child(
                                         div()
                                             .text_size(px(13.0))
-                                            .text_color(if progress.0 + 1 < progress.1 { colors.text_secondary } else { colors.text_muted })
+                                            .text_color(if progress.0 + 1 < progress.1 {
+                                                colors.text_secondary
+                                            } else {
+                                                colors.text_muted
+                                            })
                                             .child("下一个 →"),
                                     ),
                             ),
@@ -945,92 +1030,78 @@ impl KeyzenApp {
                             .font_family("JetBrains Mono")
                             .text_color(colors.text_secondary)
                             .child(
-                                div()
-                                    .flex()
-                                    .gap_1()
-                                    .child("WPM:")
-                                    .child(
-                                        div()
-                                            .w(px(36.0))
-                                            .text_align(TextAlign::Right)
-                                            .child(format!("{:.0}", snapshot.current_wpm))
-                                    )
+                                div().flex().gap_1().child("WPM:").child(
+                                    div()
+                                        .w(px(36.0))
+                                        .text_align(TextAlign::Right)
+                                        .child(format!("{:.0}", snapshot.current_wpm)),
+                                ),
                             )
                             .child("|")
                             .child(
-                                div()
-                                    .flex()
-                                    .gap_1()
-                                    .child("准确率:")
-                                    .child(
-                                        div()
-                                            .w(px(60.0))
-                                            .text_align(TextAlign::Right)
-                                            .child(format!("{:.1}%", snapshot.accuracy * 100.0))
-                                    )
+                                div().flex().gap_1().child("准确率:").child(
+                                    div()
+                                        .w(px(60.0))
+                                        .text_align(TextAlign::Right)
+                                        .child(format!("{:.1}%", snapshot.accuracy * 100.0)),
+                                ),
                             )
                             .child("|")
                             .child(
-                                div()
-                                    .flex()
-                                    .gap_1()
-                                    .child("进度:")
-                                    .child(
-                                        div()
-                                            .w(px(48.0))
-                                            .text_align(TextAlign::Right)
-                                            .child(format!("{:.0}%", snapshot.progress * 100.0))
-                                    )
+                                div().flex().gap_1().child("进度:").child(
+                                    div()
+                                        .w(px(48.0))
+                                        .text_align(TextAlign::Right)
+                                        .child(format!("{:.0}%", snapshot.progress * 100.0)),
+                                ),
                             ),
                     ),
             )
             .child(
                 // 打字区域（占据剩余空间）
-                div()
-                    .flex_1()
-                    .px_8()
-                    .pb_4()
-                    .child(
-                        div()
-                            .w_full()
-                            .p_12()
-                            .bg(colors.bg_secondary)
-                            .rounded(px(16.0))
-                            .flex()
-                            .flex_col()
-                            .gap_4()
-                            .when(current_exercise.hint.is_some(), |el| {
-                                el.child(
-                                    // 提示信息 - 左对齐
-                                    div()
-                                        .text_size(px(13.0))
-                                        .text_color(colors.text_muted)
-                                        .child(current_exercise.hint.as_ref().unwrap().clone()),
-                                )
-                            })
-                            .child(
-                                // 打字文本
+                div().flex_1().px_8().pb_4().child(
+                    div()
+                        .w_full()
+                        .p_12()
+                        .bg(colors.bg_secondary)
+                        .rounded(px(16.0))
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .when(current_exercise.hint.is_some(), |el| {
+                            el.child(
+                                // 提示信息 - 左对齐
                                 div()
-                                    .w_full()
-                                    .font_family("JetBrains Mono")
-                                    .text_size(px(24.0))
-                                    .line_height(px(36.0))
-                                    .flex()
-                                    .flex_row()
-                                    .flex_wrap()
-                                    .children(display_chars.iter().enumerate().map(|(i, &display_char)| {
-                                        let target_char = target_chars.get(i).copied().unwrap_or(' ');
+                                    .text_size(px(13.0))
+                                    .text_color(colors.text_muted)
+                                    .child(current_exercise.hint.as_ref().unwrap().clone()),
+                            )
+                        })
+                        .child(
+                            // 打字文本
+                            div()
+                                .w_full()
+                                .font_family("JetBrains Mono")
+                                .text_size(px(24.0))
+                                .line_height(px(36.0))
+                                .flex()
+                                .flex_row()
+                                .flex_wrap()
+                                .children(display_chars.iter().enumerate().map(
+                                    |(i, &display_char)| {
+                                        let target_char =
+                                            target_chars.get(i).copied().unwrap_or(' ');
 
                                         // 决定显示什么字符：已正确输入的显示真实字符，其他显示隐藏字符
                                         let show_char = if i < input_chars.len() {
                                             let input_char = input_chars[i];
                                             if input_char == target_char {
-                                                target_char  // 输入正确，显示真实字符
+                                                target_char // 输入正确，显示真实字符
                                             } else {
-                                                display_char  // 输入错误，显示隐藏字符（会标红）
+                                                display_char // 输入错误，显示隐藏字符（会标红）
                                             }
                                         } else {
-                                            display_char  // 未输入，显示隐藏字符
+                                            display_char // 未输入，显示隐藏字符
                                         };
 
                                         let (color, bg_color) = if i < input_chars.len() {
@@ -1058,9 +1129,10 @@ impl KeyzenApp {
                                         }
 
                                         char_div
-                                    })),
-                            ),
-                    ),
+                                    },
+                                )),
+                        ),
+                ),
             )
             .child(
                 // 固定在底部的提示
@@ -1256,7 +1328,11 @@ impl KeyzenApp {
     }
 
     /// 渲染词云组件
-    fn render_word_cloud(&self, weak_units: Vec<WeakUnit>, colors: &ThemeColors) -> impl IntoElement {
+    fn render_word_cloud(
+        &self,
+        weak_units: Vec<WeakUnit>,
+        colors: &ThemeColors,
+    ) -> impl IntoElement {
         // 计算字体大小范围
         let max_error_rate = weak_units
             .iter()
@@ -1679,7 +1755,9 @@ impl EntityInputHandler for KeyzenApp {
                     session_model.handle_keystroke(&ch.to_string(), cx);
 
                     // 检查当前练习是否完成且无错误，才自动跳转
-                    if session_model.session.is_current_exercise_complete() && !session_model.session.current_exercise_has_errors() {
+                    if session_model.session.is_current_exercise_complete()
+                        && !session_model.session.current_exercise_has_errors()
+                    {
                         if session_model.session.has_next_exercise() {
                             session_model.session.advance_to_next_exercise();
                             debug!("✅ 练习无错误，自动跳转到下一个练习");
@@ -1725,6 +1803,19 @@ impl EntityInputHandler for KeyzenApp {
 
 impl Render for KeyzenApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 检查是否需要重新加载课程
+        let should_reload = if let Ok(mut needs_reload) = self.needs_reload.lock() {
+            let should = *needs_reload;
+            *needs_reload = false;
+            should
+        } else {
+            false
+        };
+
+        if should_reload {
+            self.reload_lessons(cx);
+        }
+
         // 订阅 session 的变化
         if let Some(session) = &self.session {
             let session_clone = session.clone();

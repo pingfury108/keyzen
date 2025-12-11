@@ -156,6 +156,203 @@ impl TypingSession {
         self.keystroke_history.clear();
     }
 
+    /// 根据记忆模式生成显示文本
+    pub fn generate_display_text(&self, mode: MemoryMode) -> String {
+        match mode {
+            MemoryMode::Off => self.get_target_text().to_string(),
+            MemoryMode::Complete => self.hide_complete(),
+            MemoryMode::FirstLetter => self.hide_first_letter_only(),
+            MemoryMode::Partial(level) => self.hide_partial(level),
+        }
+    }
+
+    /// 完全隐藏：保留空格和标点，其他用 _ 替代
+    fn hide_complete(&self) -> String {
+        self.get_target_text()
+            .chars()
+            .map(|ch| {
+                if ch.is_whitespace() || ch.is_ascii_punctuation() || "，。！？；：\"\"''（）【】《》、".contains(ch) {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect()
+    }
+
+    /// 首字母提示模式
+    fn hide_first_letter_only(&self) -> String {
+        let text = self.get_target_text();
+
+        if self.is_cjk_language() {
+            // 中文：每个词显示第一个字
+            self.hide_chinese_first_char(text)
+        } else {
+            // 英文：每个单词只显示首字母
+            self.hide_english_first_letter(text)
+        }
+    }
+
+    /// 部分隐藏模式
+    fn hide_partial(&self, level: PartialLevel) -> String {
+        let ratio = match level {
+            PartialLevel::Low => 0.3,
+            PartialLevel::Medium => 0.5,
+            PartialLevel::High => 0.7,
+        };
+
+        if self.is_cjk_language() {
+            // 中文：按字隐藏
+            self.hide_chinese_chars(ratio)
+        } else {
+            // 英文/代码：按单词隐藏
+            self.hide_english_words(ratio)
+        }
+    }
+
+    /// 隐藏中文字符
+    fn hide_chinese_chars(&self, ratio: f32) -> String {
+        use rand::seq::SliceRandom;
+        use rand::thread_rng;
+
+        let text = self.get_target_text();
+        let chars: Vec<char> = text.chars().collect();
+
+        // 找出所有中文字符的索引
+        let cjk_indices: Vec<usize> = chars
+            .iter()
+            .enumerate()
+            .filter(|(_, &ch)| self.is_cjk_char(ch))
+            .map(|(i, _)| i)
+            .collect();
+
+        // 计算需要隐藏的数量
+        let hide_count = (cjk_indices.len() as f32 * ratio).round() as usize;
+
+        // 随机选择要隐藏的索引
+        let mut rng = thread_rng();
+        let mut hide_indices: Vec<usize> = cjk_indices;
+        hide_indices.shuffle(&mut rng);
+        let hide_set: HashSet<usize> = hide_indices.into_iter().take(hide_count).collect();
+
+        // 生成隐藏后的文本
+        chars
+            .iter()
+            .enumerate()
+            .map(|(i, &ch)| if hide_set.contains(&i) { '_' } else { ch })
+            .collect()
+    }
+
+    /// 隐藏英文单词
+    fn hide_english_words(&self, ratio: f32) -> String {
+        use rand::seq::SliceRandom;
+        use rand::thread_rng;
+
+        let text = self.get_target_text();
+        let mut words = Vec::new();
+        let mut in_word = false;
+        let mut start_idx = 0;
+
+        // 提取所有单词的起始和结束位置
+        for (i, ch) in text.chars().enumerate() {
+            if ch.is_alphanumeric() {
+                if !in_word {
+                    in_word = true;
+                    start_idx = i;
+                }
+            } else {
+                if in_word {
+                    in_word = false;
+                    words.push((start_idx, i));
+                }
+            }
+        }
+        if in_word {
+            words.push((start_idx, text.len()));
+        }
+
+        // 随机选择要隐藏的单词
+        let hide_count = (words.len() as f32 * ratio).round() as usize;
+        let mut rng = thread_rng();
+        words.shuffle(&mut rng);
+        let hide_words: HashSet<(usize, usize)> = words.into_iter().take(hide_count).collect();
+
+        // 生成隐藏后的文本
+        let chars: Vec<char> = text.chars().collect();
+        let mut result = String::new();
+
+        for (i, ch) in chars.iter().enumerate() {
+            let should_hide = hide_words.iter().any(|&(start, end)| i >= start && i < end);
+            if should_hide && ch.is_alphanumeric() {
+                result.push('_');
+            } else {
+                result.push(*ch);
+            }
+        }
+        result
+    }
+
+    /// 英文首字母提示
+    fn hide_english_first_letter(&self, text: &str) -> String {
+        let mut result = String::new();
+        let mut in_word = false;
+        let mut is_first = false;
+
+        for ch in text.chars() {
+            if ch.is_alphanumeric() {
+                if !in_word {
+                    in_word = true;
+                    is_first = true;
+                }
+                if is_first {
+                    result.push(ch);
+                    is_first = false;
+                } else {
+                    result.push('_');
+                }
+            } else {
+                in_word = false;
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    /// 中文首字提示：每个词显示第一个字
+    fn hide_chinese_first_char(&self, text: &str) -> String {
+        let mut result = String::new();
+        let mut show_next = true;
+
+        for ch in text.chars() {
+            if self.is_cjk_char(ch) {
+                if show_next {
+                    result.push(ch);
+                    show_next = false;
+                } else {
+                    result.push('_');
+                }
+            } else {
+                result.push(ch);
+                show_next = !ch.is_alphanumeric(); // 遇到标点/空格后重置
+            }
+        }
+        result
+    }
+
+    /// 判断是否为 CJK 字符
+    fn is_cjk_char(&self, ch: char) -> bool {
+        matches!(ch,
+            '\u{4E00}'..='\u{9FFF}' |  // CJK 统一表意文字
+            '\u{3400}'..='\u{4DBF}' |  // CJK 扩展 A
+            '\u{20000}'..='\u{2A6DF}' | // CJK 扩展 B
+            '\u{2A700}'..='\u{2B73F}' | // CJK 扩展 C
+            '\u{2B740}'..='\u{2B81F}' | // CJK 扩展 D
+            '\u{2B820}'..='\u{2CEAF}' | // CJK 扩展 E
+            '\u{F900}'..='\u{FAFF}' |   // CJK 兼容表意文字
+            '\u{2F800}'..='\u{2FA1F}'   // CJK 兼容表意文字补充
+        )
+    }
+
     /// 核心方法：处理按键
     pub fn handle_keystroke(&mut self, ch: char) {
         debug!(

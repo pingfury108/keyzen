@@ -44,6 +44,7 @@ struct KeyzenApp {
     show_history: bool,
     show_settings: bool,
     current_theme: Theme,
+    memory_mode: MemoryMode,
     // 缓存完成时的统计快照（避免 WPM 持续变化）
     completion_snapshot: Option<keyzen_engine::SessionSnapshot>,
     // 缓存历史记录,用于列表渲染
@@ -190,6 +191,10 @@ impl SessionModel {
         self.session.get_snapshot()
     }
 
+    fn generate_display_text(&self, mode: MemoryMode) -> String {
+        self.session.generate_display_text(mode)
+    }
+
     fn is_completed(&self) -> bool {
         let snapshot = self.session.get_snapshot();
         snapshot.progress >= 1.0
@@ -232,6 +237,25 @@ impl KeyzenApp {
             })
             .unwrap_or(Theme::Dark); // 默认深色主题
 
+        // 从数据库加载记忆模式配置
+        let memory_mode = database
+            .get_config("memory_mode")
+            .ok()
+            .flatten()
+            .and_then(|s| {
+                // 解析格式：off, complete, first_letter, partial_low, partial_medium, partial_high
+                match s.as_str() {
+                    "off" => Some(MemoryMode::Off),
+                    "complete" => Some(MemoryMode::Complete),
+                    "first_letter" => Some(MemoryMode::FirstLetter),
+                    "partial_low" => Some(MemoryMode::Partial(PartialLevel::Low)),
+                    "partial_medium" => Some(MemoryMode::Partial(PartialLevel::Medium)),
+                    "partial_high" => Some(MemoryMode::Partial(PartialLevel::High)),
+                    _ => None,
+                }
+            })
+            .unwrap_or(MemoryMode::Off); // 默认关闭
+
         Self {
             session: None,
             lessons,
@@ -241,6 +265,7 @@ impl KeyzenApp {
             show_history: false,
             show_settings: false,
             current_theme,
+            memory_mode,
             completion_snapshot: None,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
@@ -313,6 +338,25 @@ impl KeyzenApp {
         };
         if let Err(e) = self.database.save_config("theme", theme_str) {
             eprintln!("保存主题配置失败: {}", e);
+        }
+
+        cx.notify();
+    }
+
+    fn set_memory_mode(&mut self, mode: MemoryMode, cx: &mut Context<Self>) {
+        self.memory_mode = mode;
+
+        // 保存记忆模式配置到数据库
+        let mode_str = match mode {
+            MemoryMode::Off => "off",
+            MemoryMode::Complete => "complete",
+            MemoryMode::FirstLetter => "first_letter",
+            MemoryMode::Partial(PartialLevel::Low) => "partial_low",
+            MemoryMode::Partial(PartialLevel::Medium) => "partial_medium",
+            MemoryMode::Partial(PartialLevel::High) => "partial_high",
+        };
+        if let Err(e) = self.database.save_config("memory_mode", mode_str) {
+            eprintln!("保存记忆模式配置失败: {}", e);
         }
 
         cx.notify();
@@ -770,12 +814,13 @@ impl KeyzenApp {
     fn render_practice_area(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.get_colors();
 
-        let (snapshot, target_text, input_text, progress, current_exercise) = if let Some(session) = &self.session {
+        let (snapshot, target_text, display_text, input_text, progress, current_exercise) = if let Some(session) = &self.session {
             let session_read = session.read(cx);
             let (current, total) = session_read.session.get_progress();
             (
                 session_read.get_snapshot(),
                 session_read.get_target_text().to_string(),
+                session_read.generate_display_text(self.memory_mode),
                 session_read.get_input_text(),
                 (current, total),
                 session_read.session.get_current_exercise().clone(),
@@ -785,6 +830,7 @@ impl KeyzenApp {
         };
 
         let target_chars: Vec<char> = target_text.chars().collect();
+        let display_chars: Vec<char> = display_text.chars().collect();
         let input_chars: Vec<char> = input_text.chars().collect();
 
         // 获取当前课程名称
@@ -973,7 +1019,21 @@ impl KeyzenApp {
                                     .flex()
                                     .flex_row()
                                     .flex_wrap()
-                                    .children(target_chars.iter().enumerate().map(|(i, &target_char)| {
+                                    .children(display_chars.iter().enumerate().map(|(i, &display_char)| {
+                                        let target_char = target_chars.get(i).copied().unwrap_or(' ');
+
+                                        // 决定显示什么字符：已正确输入的显示真实字符，其他显示隐藏字符
+                                        let show_char = if i < input_chars.len() {
+                                            let input_char = input_chars[i];
+                                            if input_char == target_char {
+                                                target_char  // 输入正确，显示真实字符
+                                            } else {
+                                                display_char  // 输入错误，显示隐藏字符（会标红）
+                                            }
+                                        } else {
+                                            display_char  // 未输入，显示隐藏字符
+                                        };
+
                                         let (color, bg_color) = if i < input_chars.len() {
                                             let input_char = input_chars[i];
                                             if input_char == target_char {
@@ -992,7 +1052,7 @@ impl KeyzenApp {
                                             .flex()
                                             .items_center()
                                             .text_color(color)
-                                            .child(target_char.to_string());
+                                            .child(show_char.to_string());
 
                                         if let Some(bg) = bg_color {
                                             char_div = char_div.bg(bg);
@@ -1291,6 +1351,54 @@ impl KeyzenApp {
             )
     }
 
+    /// 渲染记忆模式按钮
+    fn render_memory_mode_button(
+        &self,
+        mode: MemoryMode,
+        label: &str,
+        colors: &ThemeColors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_selected = self.memory_mode == mode;
+        let label_owned = label.to_string();
+
+        div()
+            .px_4()
+            .py_2()
+            .bg(if is_selected {
+                colors.accent
+            } else {
+                colors.bg_primary
+            })
+            .when(!is_selected, |el| {
+                el.hover(|style| style.bg(colors.bg_hover))
+            })
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _event, _window, cx| {
+                    if this.memory_mode != mode {
+                        this.set_memory_mode(mode, cx);
+                    }
+                }),
+            )
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .text_color(if is_selected {
+                        if matches!(self.current_theme, Theme::Light) {
+                            rgb(0xFFFFFF) // 浅色主题选中时白色文字
+                        } else {
+                            rgb(0x000000) // 深色主题选中时黑色文字
+                        }
+                    } else {
+                        colors.text_secondary.into()
+                    })
+                    .child(label_owned),
+            )
+    }
+
     fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.get_colors();
         let is_dark = self.current_theme == Theme::Dark;
@@ -1457,6 +1565,46 @@ impl KeyzenApp {
                                                             ),
                                                     ),
                                             ),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        // 记忆模式设置
+                        div()
+                            .w_full()
+                            .p_6()
+                            .bg(colors.bg_secondary)
+                            .rounded(px(12.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_4()
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(colors.text_primary)
+                                            .child("记忆模式"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .text_color(colors.text_muted)
+                                            .child("隐藏部分或全部文本以练习记忆打字"),
+                                    )
+                                    .child(
+                                        // 记忆模式选项
+                                        div()
+                                            .flex()
+                                            .flex_wrap()
+                                            .gap_2()
+                                            .child(self.render_memory_mode_button(MemoryMode::Off, "关闭", &colors, cx))
+                                            .child(self.render_memory_mode_button(MemoryMode::FirstLetter, "首字母提示", &colors, cx))
+                                            .child(self.render_memory_mode_button(MemoryMode::Partial(PartialLevel::Low), "部分隐藏 (30%)", &colors, cx))
+                                            .child(self.render_memory_mode_button(MemoryMode::Partial(PartialLevel::Medium), "部分隐藏 (50%)", &colors, cx))
+                                            .child(self.render_memory_mode_button(MemoryMode::Partial(PartialLevel::High), "部分隐藏 (70%)", &colors, cx))
+                                            .child(self.render_memory_mode_button(MemoryMode::Complete, "完全隐藏", &colors, cx)),
                                     ),
                             ),
                     )

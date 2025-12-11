@@ -1,6 +1,46 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// 记忆模式（隐藏文本模式）
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum MemoryMode {
+    /// 关闭 - 正常显示所有文本
+    Off,
+    /// 部分隐藏 - 隐藏部分单元
+    Partial(PartialLevel),
+    /// 完全隐藏 - 只显示下划线和标点
+    Complete,
+    /// 首字母提示 - 只显示每个单元的首字母
+    FirstLetter,
+}
+
+/// 部分隐藏级别
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum PartialLevel {
+    Low,    // 30%
+    Medium, // 50%
+    High,   // 70%
+}
+
+impl MemoryMode {
+    pub fn hide_ratio(&self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Partial(PartialLevel::Low) => 0.3,
+            Self::Partial(PartialLevel::Medium) => 0.5,
+            Self::Partial(PartialLevel::High) => 0.7,
+            Self::Complete => 1.0,
+            Self::FirstLetter => 0.0, // 特殊处理
+        }
+    }
+}
+
+impl Default for MemoryMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
 /// 课程类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum LessonType {

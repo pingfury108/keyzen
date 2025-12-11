@@ -11,7 +11,7 @@ path = "src/main.rs"
 [package.metadata.bundle]
 name = "Keyzen"
 identifier = "keyzen.pingfury.top"
-icon = ["resources/macos/keyzen.icns"]
+icon = ["../../resources/macos/keyzen.icns"]
 version = "0.1.0"
 copyright = "Copyright © 2024 pingfury"
 category = "Education"

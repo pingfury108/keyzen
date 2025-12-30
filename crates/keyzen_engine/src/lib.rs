@@ -10,7 +10,7 @@ use keyzen_persistence::Database;
 pub struct TypingSession {
     // 课程数据
     lesson: Lesson,
-    mode: PracticeMode,
+    _mode: PracticeMode,  // 保留供将来使用
     input_mode: InputMode,
     language: String, // 课程语言，用于统计计算
 
@@ -51,7 +51,7 @@ impl TypingSession {
 
         Self {
             lesson,
-            mode,
+            _mode: mode,
             input_mode: InputMode::default(),
             language,
             current_exercise_index: 0,

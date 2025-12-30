@@ -8,10 +8,20 @@ use log::debug;
 use std::ops::Range;
 use std::sync::{mpsc, Arc, Mutex};
 
+mod lesson_store;
+use lesson_store::{LessonStoreManager, RemoteLessonMeta};
+
 // 定义 Actions
 actions!(
     keyzen,
-    [Quit, BackToList, ShowHistory, ShowSettings, ToggleTheme]
+    [
+        Quit,
+        BackToList,
+        ShowHistory,
+        ShowSettings,
+        ToggleTheme,
+        ShowLessonStore
+    ]
 );
 
 // 主题枚举
@@ -39,14 +49,20 @@ struct KeyzenApp {
     session: Option<Entity<SessionModel>>,
     lessons: Vec<Lesson>,
     lesson_loader: LessonLoader,
-    needs_reload: Arc<Mutex<bool>>, // 标记是否需要重新加载
+    needs_reload: Arc<Mutex<bool>>,
     selected_lesson: Option<usize>,
     focus_handle: FocusHandle,
     database: Arc<Database>,
     show_history: bool,
     show_settings: bool,
+    show_lesson_store: bool,
     current_theme: Theme,
     memory_mode: MemoryMode,
+    // 课程商店
+    store_manager: LessonStoreManager,
+    remote_lessons: Vec<RemoteLessonMeta>,
+    store_loading: bool,
+    store_error: Option<String>,
     // 缓存完成时的统计快照（避免 WPM 持续变化）
     completion_snapshot: Option<keyzen_engine::SessionSnapshot>,
     // 缓存历史记录,用于列表渲染
@@ -271,6 +287,14 @@ impl KeyzenApp {
         let needs_reload = Arc::new(Mutex::new(false));
         let needs_reload_clone = needs_reload.clone();
 
+        // 初始化课程商店管理器
+        let api_url = std::env::var("KEYZEN_STORE_API")
+            .unwrap_or_else(|_| "https://keyzen.pingfury.top/api/lessons".to_string());
+        let user_data_dir = dirs::data_dir()
+            .map(|p| p.join("keyzen").join("lessons"))
+            .unwrap_or_else(|| std::path::PathBuf::from("./data/lessons"));
+        let store_manager = LessonStoreManager::new(api_url, user_data_dir);
+
         let mut app = Self {
             session: None,
             lessons,
@@ -281,8 +305,13 @@ impl KeyzenApp {
             database,
             show_history: false,
             show_settings: false,
+            show_lesson_store: false,
             current_theme,
             memory_mode,
+            store_manager,
+            remote_lessons: Vec::new(),
+            store_loading: false,
+            store_error: None,
             completion_snapshot: None,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
@@ -323,6 +352,69 @@ impl KeyzenApp {
                 eprintln!("❌ 重新加载课程失败: {}", e);
             }
         }
+    }
+
+    /// 获取远程课程列表
+    fn fetch_remote_lessons(&mut self, cx: &mut Context<Self>) {
+        debug!("🌐 开始获取远程课程列表...");
+        self.store_loading = true;
+        self.store_error = None;
+        cx.notify();
+
+        let store_manager = self.store_manager.clone();
+        let background = cx.background_executor().clone();
+
+        cx.spawn(async move |this: WeakEntity<KeyzenApp>, cx| {
+            // 在后台执行器上运行阻塞的 HTTP 请求
+            let result = background.spawn(async move {
+                store_manager.fetch_lessons()
+            }).await;
+
+            let _ = this.update(cx, |this, cx| {
+                this.store_loading = false;
+                match result {
+                    Ok(lessons) => {
+                        this.remote_lessons = lessons;
+                        this.store_error = None;
+                        debug!("✅ 成功获取 {} 个远程课程", this.remote_lessons.len());
+                    }
+                    Err(e) => {
+                        this.store_error = Some(format!("获取失败: {}", e));
+                        debug!("❌ 获取远程课程失败: {}", e);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// 下载课程
+    fn download_lesson(&mut self, lesson: RemoteLessonMeta, cx: &mut Context<Self>) {
+        debug!("⬇️  开始下载课程: {}", lesson.title);
+
+        let store_manager = self.store_manager.clone();
+        let background = cx.background_executor().clone();
+
+        cx.spawn(async move |this: WeakEntity<KeyzenApp>, cx| {
+            // 在后台执行器上运行阻塞的 HTTP 请求
+            let result = background.spawn(async move {
+                store_manager.download_lesson(&lesson)
+            }).await;
+
+            let _ = this.update(cx, |_this, cx| {
+                match result {
+                    Ok(_path) => {
+                        debug!("✅ 课程下载成功，等待文件监听触发重新加载");
+                    }
+                    Err(e) => {
+                        debug!("❌ 下载课程失败: {}", e);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn start_lesson(&mut self, lesson_index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -378,6 +470,17 @@ impl KeyzenApp {
         cx.notify();
     }
 
+    fn show_lesson_store(&mut self, _: &ShowLessonStore, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_lesson_store = !self.show_lesson_store;
+        if self.show_lesson_store && self.remote_lessons.is_empty() {
+            // 首次打开时自动获取课程列表
+            self.fetch_remote_lessons(cx);
+        }
+        self.focus_handle.focus(window);
+        cx.notify();
+    }
+
+    #[allow(dead_code)]
     fn toggle_theme(&mut self, _: &ToggleTheme, _window: &mut Window, cx: &mut Context<Self>) {
         self.current_theme = match self.current_theme {
             Theme::Dark => Theme::Light,
@@ -480,23 +583,51 @@ impl KeyzenApp {
                     )
                     .child(
                         div()
-                            .px_4()
-                            .py_2()
-                            .bg(colors.bg_secondary)
-                            .hover(|style| style.bg(colors.bg_hover))
-                            .rounded(px(8.0))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.show_history(&ShowHistory, window, cx);
-                                }),
+                            .flex()
+                            .gap_3()
+                            .child(
+                                // 课程商店按钮
+                                div()
+                                    .px_4()
+                                    .py_2()
+                                    .bg(colors.accent)
+                                    .hover(|style| style.opacity(0.8))
+                                    .rounded(px(8.0))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, window, cx| {
+                                            this.show_lesson_store(&ShowLessonStore, window, cx);
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xFFFFFF))
+                                            .child("课程商店"),
+                                    ),
                             )
                             .child(
+                                // 历史记录按钮
                                 div()
-                                    .text_size(px(14.0))
-                                    .text_color(colors.accent)
-                                    .child("查看历史记录"),
+                                    .px_4()
+                                    .py_2()
+                                    .bg(colors.bg_secondary)
+                                    .hover(|style| style.bg(colors.bg_hover))
+                                    .rounded(px(8.0))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, window, cx| {
+                                            this.show_history(&ShowHistory, window, cx);
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(colors.accent)
+                                            .child("查看历史记录"),
+                                    ),
                             ),
                     ),
             )
@@ -1474,6 +1605,229 @@ impl KeyzenApp {
             )
     }
 
+    fn render_lesson_store_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = self.get_colors();
+        let local_lesson_ids: Vec<u32> = self.lessons.iter().map(|l| l.id).collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .w_full()
+            .h_full()
+            .p_8()
+            .child(
+                // 标题栏
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(20.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.text_primary)
+                            .child("课程商店"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_3()
+                            .child(
+                                // 刷新按钮
+                                div()
+                                    .px_4()
+                                    .py_2()
+                                    .bg(colors.accent)
+                                    .hover(|style| style.opacity(0.8))
+                                    .rounded(px(8.0))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, _window, cx| {
+                                            this.fetch_remote_lessons(cx);
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(rgb(0xFFFFFF))
+                                            .child("刷新"),
+                                    ),
+                            )
+                            .child(
+                                // 关闭按钮
+                                div()
+                                    .px_4()
+                                    .py_2()
+                                    .bg(colors.bg_secondary)
+                                    .hover(|style| style.bg(colors.bg_hover))
+                                    .rounded(px(8.0))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, window, cx| {
+                                            this.show_lesson_store(&ShowLessonStore, window, cx);
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(14.0))
+                                            .text_color(colors.text_primary)
+                                            .child("关闭"),
+                                    ),
+                            ),
+                    ),
+            )
+            .child(
+                // 内容区域
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .flex_1()
+                    .when(self.store_loading, |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .h_full()
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .text_color(colors.text_secondary)
+                                        .child("加载中..."),
+                                ),
+                        )
+                    })
+                    .when_some(self.store_error.clone(), |this, error| {
+                        this.child(
+                            div()
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .h_full()
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .text_color(colors.error)
+                                        .child(error),
+                                ),
+                        )
+                    })
+                    .when(!self.store_loading && self.store_error.is_none(), |this| {
+                        this.children(self.remote_lessons.iter().map(|lesson| {
+                            let is_downloaded = self.store_manager.is_downloaded(lesson.id, &local_lesson_ids);
+                            let lesson_clone = lesson.clone();
+
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .p_4()
+                                .bg(colors.bg_secondary)
+                                .hover(|style| style.bg(colors.bg_hover))
+                                .rounded(px(8.0))
+                                .child(
+                                    // 标题和难度
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_size(px(16.0))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(colors.text_primary)
+                                                .child(lesson.title.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .bg(colors.accent)
+                                                .rounded(px(4.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.0))
+                                                        .text_color(rgb(0xFFFFFF))
+                                                        .child(lesson.difficulty.clone()),
+                                                ),
+                                        ),
+                                )
+                                .child(
+                                    // 描述
+                                    div()
+                                        .text_size(px(14.0))
+                                        .text_color(colors.text_secondary)
+                                        .child(lesson.description.clone()),
+                                )
+                                .child(
+                                    // 作者和标签
+                                    div()
+                                        .flex()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.text_muted)
+                                                .child(format!("作者: {}", lesson.author)),
+                                        )
+                                        .children(lesson.tags.iter().map(|tag| {
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .bg(colors.bg_hover)
+                                                .rounded(px(4.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(10.0))
+                                                        .text_color(colors.text_muted)
+                                                        .child(tag.clone()),
+                                                )
+                                        })),
+                                )
+                                .child(
+                                    // 下载按钮
+                                    div()
+                                        .flex()
+                                        .justify_end()
+                                        .child(
+                                            div()
+                                                .px_4()
+                                                .py_2()
+                                                .bg(if is_downloaded {
+                                                    hsla(0.0, 0.0, 0.4, 1.0)  // 灰色
+                                                } else {
+                                                    colors.accent
+                                                })
+                                                .when(!is_downloaded, |this| {
+                                                    this.hover(|style| style.opacity(0.8))
+                                                        .cursor_pointer()
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            cx.listener(move |this, _event, _window, cx| {
+                                                                this.download_lesson(lesson_clone.clone(), cx);
+                                                            }),
+                                                        )
+                                                })
+                                                .rounded(px(8.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(14.0))
+                                                        .text_color(rgb(0xFFFFFF))
+                                                        .child(if is_downloaded { "已下载" } else { "下载" })
+                                                )
+                                        )
+                                )
+                        }))
+                    }),
+            )
+            .into_any()
+    }
+
     fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.get_colors();
         let is_dark = self.current_theme == Theme::Dark;
@@ -1827,6 +2181,8 @@ impl Render for KeyzenApp {
 
         let content = if self.show_settings {
             self.render_settings_view(cx)
+        } else if self.show_lesson_store {
+            self.render_lesson_store_view(cx)
         } else if let Some(session) = &self.session {
             let is_completed = session.read(cx).is_completed();
             if is_completed {

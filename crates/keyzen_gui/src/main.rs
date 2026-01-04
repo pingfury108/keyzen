@@ -635,6 +635,7 @@ impl KeyzenApp {
                                 // 历史记录按钮
                                 Button::new("history-btn")
                                     .ghost()
+                                    .outline()
                                     .label("查看历史记录")
                                     .on_click(cx.listener(|this, _event, window, cx| {
                                         this.show_history(&ShowHistory, window, cx);
@@ -742,6 +743,7 @@ impl KeyzenApp {
                     .child(
                         Button::new("back-to-list-btn")
                             .ghost()
+                            .outline()
                             .label("返回课程列表")
                             .on_click(cx.listener(|this, _event, window, cx| {
                                 this.show_history(&ShowHistory, window, cx);
@@ -1404,6 +1406,7 @@ impl KeyzenApp {
                     .child(
                         Button::new("back-to-list-from-completion-btn")
                             .ghost()
+                            .outline()
                             .label("返回课程列表")
                             .on_click(cx.listener(|this, _event, window, cx| {
                                 // 在清除 session 前保存数据
@@ -1559,7 +1562,7 @@ impl KeyzenApp {
         if is_selected {
             btn = btn.primary();
         } else {
-            btn = btn.ghost();
+            btn = btn.ghost().outline();
         }
 
         btn
@@ -1606,6 +1609,7 @@ impl KeyzenApp {
                                 // 关闭按钮
                                 Button::new("close-store-btn")
                                     .ghost()
+                                    .outline()
                                     .label("关闭")
                                     .on_click(cx.listener(|this, _event, window, cx| {
                                         this.show_lesson_store(&ShowLessonStore, window, cx);
@@ -1766,6 +1770,7 @@ impl KeyzenApp {
                     .child(
                         Button::new("close-settings-btn")
                             .ghost()
+                            .outline()
                             .label("关闭")
                             .on_click(cx.listener(|this, _event, window, cx| {
                                 this.show_settings(&ShowSettings, window, cx);
@@ -1829,7 +1834,7 @@ impl KeyzenApp {
                                                         if is_dark {
                                                             btn = btn.primary();
                                                         } else {
-                                                            btn = btn.ghost();
+                                                            btn = btn.ghost().outline();
                                                         }
                                                         btn
                                                     })
@@ -1849,7 +1854,7 @@ impl KeyzenApp {
                                                         if !is_dark {
                                                             btn = btn.primary();
                                                         } else {
-                                                            btn = btn.ghost();
+                                                            btn = btn.ghost().outline();
                                                         }
                                                         btn
                                                     }),

@@ -10,6 +10,9 @@ use std::sync::{mpsc, Arc, Mutex};
 
 // 导入 gpui-component
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::notification::NotificationList;
+use gpui_component::spinner::Spinner;
+use gpui_component::tag::Tag;
 
 mod lesson_store;
 use lesson_store::{LessonStoreManager, RemoteLessonMeta};
@@ -72,6 +75,8 @@ struct KeyzenApp {
     cached_sessions: Vec<SessionRecord>,
     // 用于 InputHandler
     practice_area_bounds: Option<Bounds<Pixels>>,
+    // 通知系统
+    notification_list: Option<Entity<NotificationList>>,
 }
 
 struct SessionModel {
@@ -318,6 +323,7 @@ impl KeyzenApp {
             completion_snapshot: None,
             cached_sessions: Vec::new(),
             practice_area_bounds: None,
+            notification_list: None,
         };
 
         // 启动文件监听
@@ -1621,12 +1627,7 @@ impl KeyzenApp {
                                 .justify_center()
                                 .items_center()
                                 .h_full()
-                                .child(
-                                    div()
-                                        .text_size(px(16.0))
-                                        .text_color(colors.text_secondary)
-                                        .child("加载中..."),
-                                ),
+                                .child(Spinner::new()),
                         )
                     })
                     .when_some(self.store_error.clone(), |this, error| {
@@ -1672,17 +1673,8 @@ impl KeyzenApp {
                                                 .child(lesson.title.clone()),
                                         )
                                         .child(
-                                            div()
-                                                .px_2()
-                                                .py_1()
-                                                .bg(colors.accent)
-                                                .rounded(px(4.0))
-                                                .child(
-                                                    div()
-                                                        .text_size(px(12.0))
-                                                        .text_color(rgb(0xFFFFFF))
-                                                        .child(lesson.difficulty.clone()),
-                                                ),
+                                            Tag::primary()
+                                                .child(lesson.difficulty.clone())
                                         ),
                                 )
                                 .child(
@@ -2024,7 +2016,12 @@ impl EntityInputHandler for KeyzenApp {
 }
 
 impl Render for KeyzenApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 初始化通知列表（仅在第一次渲染时）
+        if self.notification_list.is_none() {
+            self.notification_list = Some(cx.new(|cx| NotificationList::new(window, cx)));
+        }
+
         // 检查是否需要重新加载课程
         let should_reload = if let Ok(mut needs_reload) = self.needs_reload.lock() {
             let should = *needs_reload;
@@ -2121,6 +2118,9 @@ impl Render for KeyzenApp {
                 }
             }))
             .child(content)
+            .when_some(self.notification_list.clone(), |this, list| {
+                this.child(list)
+            })
     }
 }
 

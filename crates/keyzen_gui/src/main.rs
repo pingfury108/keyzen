@@ -417,6 +417,34 @@ impl KeyzenApp {
         .detach();
     }
 
+    /// 删除课程
+    fn delete_downloaded_lesson(&mut self, lesson_id: u32, cx: &mut Context<Self>) {
+        debug!("🗑️  开始删除课程 ID: {}", lesson_id);
+
+        let store_manager = self.store_manager.clone();
+        let background = cx.background_executor().clone();
+
+        cx.spawn(async move |this: WeakEntity<KeyzenApp>, cx| {
+            // 在后台执行器上运行阻塞的文件删除操作
+            let result = background.spawn(async move {
+                store_manager.delete_lesson(lesson_id)
+            }).await;
+
+            let _ = this.update(cx, |_this, cx| {
+                match result {
+                    Ok(_) => {
+                        debug!("✅ 课程删除成功，等待文件监听触发重新加载");
+                    }
+                    Err(e) => {
+                        debug!("❌ 删除课程失败: {}", e);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn start_lesson(&mut self, lesson_index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(lesson) = self.lessons.get(lesson_index).cloned() {
             self.session = Some(cx.new(|cx| SessionModel::new(lesson, cx)));
@@ -1720,6 +1748,7 @@ impl KeyzenApp {
                         this.children(self.remote_lessons.iter().map(|lesson| {
                             let is_downloaded = self.store_manager.is_downloaded(lesson.id, &local_lesson_ids);
                             let lesson_clone = lesson.clone();
+                            let lesson_id = lesson.id;
 
                             div()
                                 .flex()
@@ -1790,7 +1819,7 @@ impl KeyzenApp {
                                         })),
                                 )
                                 .child(
-                                    // 下载按钮
+                                    // 下载/删除按钮
                                     div()
                                         .flex()
                                         .justify_end()
@@ -1799,26 +1828,28 @@ impl KeyzenApp {
                                                 .px_4()
                                                 .py_2()
                                                 .bg(if is_downloaded {
-                                                    hsla(0.0, 0.0, 0.4, 1.0)  // 灰色
+                                                    hsla(0.0, 0.6, 0.5, 1.0)  // 红色 - 删除按钮
                                                 } else {
-                                                    colors.accent
+                                                    colors.accent  // 蓝色 - 下载按钮
                                                 })
-                                                .when(!is_downloaded, |this| {
-                                                    this.hover(|style| style.opacity(0.8))
-                                                        .cursor_pointer()
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            cx.listener(move |this, _event, _window, cx| {
-                                                                this.download_lesson(lesson_clone.clone(), cx);
-                                                            }),
-                                                        )
-                                                })
+                                                .hover(|style| style.opacity(0.8))
+                                                .cursor_pointer()
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _event, _window, cx| {
+                                                        if is_downloaded {
+                                                            this.delete_downloaded_lesson(lesson_id, cx);
+                                                        } else {
+                                                            this.download_lesson(lesson_clone.clone(), cx);
+                                                        }
+                                                    }),
+                                                )
                                                 .rounded(px(8.0))
                                                 .child(
                                                     div()
                                                         .text_size(px(14.0))
                                                         .text_color(rgb(0xFFFFFF))
-                                                        .child(if is_downloaded { "已下载" } else { "下载" })
+                                                        .child(if is_downloaded { "删除" } else { "下载" })
                                                 )
                                         )
                                 )

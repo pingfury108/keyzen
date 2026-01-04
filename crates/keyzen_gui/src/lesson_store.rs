@@ -88,6 +88,20 @@ impl LessonStoreManager {
     pub fn is_downloaded(&self, lesson_id: u32, local_lesson_ids: &[u32]) -> bool {
         local_lesson_ids.contains(&lesson_id)
     }
+
+    /// 删除已下载的课程
+    pub fn delete_lesson(&self, lesson_id: u32) -> Result<()> {
+        let file_path = self.user_data_dir.join(format!("{}.ron", lesson_id));
+
+        if file_path.exists() {
+            std::fs::remove_file(&file_path)
+                .context(format!("删除课程文件失败: {:?}", file_path))?;
+            info!("已删除课程文件: {:?}", file_path);
+            Ok(())
+        } else {
+            anyhow::bail!("课程文件不存在: {:?}", file_path)
+        }
+    }
 }
 
 #[cfg(test)]

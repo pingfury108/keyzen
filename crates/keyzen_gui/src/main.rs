@@ -8,6 +8,9 @@ use log::debug;
 use std::ops::Range;
 use std::sync::{mpsc, Arc, Mutex};
 
+// 导入 gpui-component
+use gpui_component::button::{Button, ButtonVariants};
+
 mod lesson_store;
 use lesson_store::{LessonStoreManager, RemoteLessonMeta};
 
@@ -615,47 +618,21 @@ impl KeyzenApp {
                             .gap_3()
                             .child(
                                 // 课程商店按钮
-                                div()
-                                    .px_4()
-                                    .py_2()
-                                    .bg(colors.accent)
-                                    .hover(|style| style.opacity(0.8))
-                                    .rounded(px(8.0))
-                                    .cursor_pointer()
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _event, window, cx| {
-                                            this.show_lesson_store(&ShowLessonStore, window, cx);
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .text_color(rgb(0xFFFFFF))
-                                            .child("课程商店"),
-                                    ),
+                                Button::new("store-btn")
+                                    .primary()
+                                    .label("课程商店")
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        this.show_lesson_store(&ShowLessonStore, window, cx);
+                                    }))
                             )
                             .child(
                                 // 历史记录按钮
-                                div()
-                                    .px_4()
-                                    .py_2()
-                                    .bg(colors.bg_secondary)
-                                    .hover(|style| style.bg(colors.bg_hover))
-                                    .rounded(px(8.0))
-                                    .cursor_pointer()
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _event, window, cx| {
-                                            this.show_history(&ShowHistory, window, cx);
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .text_color(colors.accent)
-                                            .child("查看历史记录"),
-                                    ),
+                                Button::new("history-btn")
+                                    .ghost()
+                                    .label("查看历史记录")
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        this.show_history(&ShowHistory, window, cx);
+                                    }))
                             ),
                     ),
             )
@@ -757,25 +734,12 @@ impl KeyzenApp {
                             .child("练习历史"),
                     )
                     .child(
-                        div()
-                            .px_4()
-                            .py_2()
-                            .bg(colors.bg_secondary)
-                            .hover(|style| style.bg(colors.bg_hover))
-                            .rounded(px(8.0))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.show_history(&ShowHistory, window, cx);
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(14.0))
-                                    .text_color(colors.accent)
-                                    .child("返回课程列表"),
-                            ),
+                        Button::new("back-to-list-btn")
+                            .ghost()
+                            .label("返回课程列表")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.show_history(&ShowHistory, window, cx);
+                            }))
                     ),
             )
             .child(
@@ -1413,74 +1377,46 @@ impl KeyzenApp {
                     .gap_4()
                     .justify_center()
                     .child(
-                        div()
-                            .px_6()
-                            .py_3()
-                            .bg(colors.accent)
-                            .hover(|style| style.bg(rgb(0x00A89F)))
-                            .rounded(px(8.0))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    // 在重新开始前保存数据
-                                    if let Some(session) = &this.session {
-                                        let db = this.database.clone();
-                                        session.update(cx, |session_model, _cx| {
-                                            if let Err(e) =
-                                                session_model.session.save_to_database(&db)
-                                            {
-                                                eprintln!("保存会话数据失败: {}", e);
-                                            }
-                                        });
-                                    }
-                                    this.restart_lesson(window, cx);
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(0x000000))
-                                    .child("重新练习"),
-                            ),
+                        Button::new("restart-lesson-btn")
+                            .primary()
+                            .label("重新练习")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                // 在重新开始前保存数据
+                                if let Some(session) = &this.session {
+                                    let db = this.database.clone();
+                                    session.update(cx, |session_model, _cx| {
+                                        if let Err(e) =
+                                            session_model.session.save_to_database(&db)
+                                        {
+                                            eprintln!("保存会话数据失败: {}", e);
+                                        }
+                                    });
+                                }
+                                this.restart_lesson(window, cx);
+                            }))
                     )
                     .child(
-                        div()
-                            .px_6()
-                            .py_3()
-                            .bg(colors.bg_secondary)
-                            .hover(|style| style.bg(colors.bg_hover))
-                            .rounded(px(8.0))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    // 在清除 session 前保存数据
-                                    if let Some(session) = &this.session {
-                                        let db = this.database.clone();
-                                        session.update(cx, |session_model, _cx| {
-                                            if let Err(e) =
-                                                session_model.session.save_to_database(&db)
-                                            {
-                                                eprintln!("保存会话数据失败: {}", e);
-                                            }
-                                        });
-                                    }
+                        Button::new("back-to-list-from-completion-btn")
+                            .ghost()
+                            .label("返回课程列表")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                // 在清除 session 前保存数据
+                                if let Some(session) = &this.session {
+                                    let db = this.database.clone();
+                                    session.update(cx, |session_model, _cx| {
+                                        if let Err(e) =
+                                            session_model.session.save_to_database(&db)
+                                        {
+                                            eprintln!("保存会话数据失败: {}", e);
+                                        }
+                                    });
+                                }
 
-                                    this.session = None;
-                                    this.selected_lesson = None;
-                                    this.focus_handle.focus(window);
-                                    cx.notify();
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(colors.text_primary)
-                                    .child("返回课程列表"),
-                            ),
+                                this.session = None;
+                                this.selected_lesson = None;
+                                this.focus_handle.focus(window);
+                                cx.notify();
+                            }))
                     ),
             )
             .into_any()
@@ -1590,47 +1526,37 @@ impl KeyzenApp {
         &self,
         mode: MemoryMode,
         label: &str,
-        colors: &ThemeColors,
+        _colors: &ThemeColors,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_selected = self.memory_mode == mode;
-        let label_owned = label.to_string();
+        let label_str = label.to_string();
 
-        div()
-            .px_4()
-            .py_2()
-            .bg(if is_selected {
-                colors.accent
-            } else {
-                colors.bg_primary
-            })
-            .when(!is_selected, |el| {
-                el.hover(|style| style.bg(colors.bg_hover))
-            })
-            .rounded(px(6.0))
-            .cursor_pointer()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _event, _window, cx| {
-                    if this.memory_mode != mode {
-                        this.set_memory_mode(mode, cx);
-                    }
-                }),
-            )
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .text_color(if is_selected {
-                        if matches!(self.current_theme, Theme::Light) {
-                            rgb(0xFFFFFF) // 浅色主题选中时白色文字
-                        } else {
-                            rgb(0x000000) // 深色主题选中时黑色文字
-                        }
-                    } else {
-                        colors.text_secondary.into()
-                    })
-                    .child(label_owned),
-            )
+        // 为每个模式创建唯一的 ID
+        let btn_id = match mode {
+            MemoryMode::Off => "memory-mode-off",
+            MemoryMode::Complete => "memory-mode-complete",
+            MemoryMode::FirstLetter => "memory-mode-first-letter",
+            MemoryMode::Partial(PartialLevel::Low) => "memory-mode-partial-low",
+            MemoryMode::Partial(PartialLevel::Medium) => "memory-mode-partial-medium",
+            MemoryMode::Partial(PartialLevel::High) => "memory-mode-partial-high",
+        };
+
+        let mut btn = Button::new(btn_id)
+            .label(label_str)
+            .on_click(cx.listener(move |this, _event, _window, cx| {
+                if this.memory_mode != mode {
+                    this.set_memory_mode(mode, cx);
+                }
+            }));
+
+        if is_selected {
+            btn = btn.primary();
+        } else {
+            btn = btn.ghost();
+        }
+
+        btn
     }
 
     fn render_lesson_store_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -1663,47 +1589,21 @@ impl KeyzenApp {
                             .gap_3()
                             .child(
                                 // 刷新按钮
-                                div()
-                                    .px_4()
-                                    .py_2()
-                                    .bg(colors.accent)
-                                    .hover(|style| style.opacity(0.8))
-                                    .rounded(px(8.0))
-                                    .cursor_pointer()
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _event, _window, cx| {
-                                            this.fetch_remote_lessons(cx);
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .text_color(rgb(0xFFFFFF))
-                                            .child("刷新"),
-                                    ),
+                                Button::new("refresh-btn")
+                                    .primary()
+                                    .label("刷新")
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.fetch_remote_lessons(cx);
+                                    }))
                             )
                             .child(
                                 // 关闭按钮
-                                div()
-                                    .px_4()
-                                    .py_2()
-                                    .bg(colors.bg_secondary)
-                                    .hover(|style| style.bg(colors.bg_hover))
-                                    .rounded(px(8.0))
-                                    .cursor_pointer()
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _event, window, cx| {
-                                            this.show_lesson_store(&ShowLessonStore, window, cx);
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .text_color(colors.text_primary)
-                                            .child("关闭"),
-                                    ),
+                                Button::new("close-store-btn")
+                                    .ghost()
+                                    .label("关闭")
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        this.show_lesson_store(&ShowLessonStore, window, cx);
+                                    }))
                             ),
                     ),
             )
@@ -1824,33 +1724,21 @@ impl KeyzenApp {
                                         .flex()
                                         .justify_end()
                                         .child(
-                                            div()
-                                                .px_4()
-                                                .py_2()
-                                                .bg(if is_downloaded {
-                                                    hsla(0.0, 0.6, 0.5, 1.0)  // 红色 - 删除按钮
-                                                } else {
-                                                    colors.accent  // 蓝色 - 下载按钮
-                                                })
-                                                .hover(|style| style.opacity(0.8))
-                                                .cursor_pointer()
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |this, _event, _window, cx| {
-                                                        if is_downloaded {
-                                                            this.delete_downloaded_lesson(lesson_id, cx);
-                                                        } else {
-                                                            this.download_lesson(lesson_clone.clone(), cx);
-                                                        }
-                                                    }),
-                                                )
-                                                .rounded(px(8.0))
-                                                .child(
-                                                    div()
-                                                        .text_size(px(14.0))
-                                                        .text_color(rgb(0xFFFFFF))
-                                                        .child(if is_downloaded { "删除" } else { "下载" })
-                                                )
+                                            if is_downloaded {
+                                                Button::new(("delete-btn", lesson_id))
+                                                    .danger()
+                                                    .label("删除")
+                                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                                        this.delete_downloaded_lesson(lesson_id, cx);
+                                                    }))
+                                            } else {
+                                                Button::new(("download-btn", lesson_id))
+                                                    .primary()
+                                                    .label("下载")
+                                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                                        this.download_lesson(lesson_clone.clone(), cx);
+                                                    }))
+                                            }
                                         )
                                 )
                         }))
@@ -1884,25 +1772,12 @@ impl KeyzenApp {
                             .child("设置"),
                     )
                     .child(
-                        div()
-                            .px_4()
-                            .py_2()
-                            .bg(colors.bg_secondary)
-                            .hover(|style| style.bg(colors.bg_hover))
-                            .rounded(px(8.0))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.show_settings(&ShowSettings, window, cx);
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(14.0))
-                                    .text_color(colors.accent)
-                                    .child("关闭"),
-                            ),
+                        Button::new("close-settings-btn")
+                            .ghost()
+                            .label("关闭")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.show_settings(&ShowSettings, window, cx);
+                            }))
                     ),
             )
             .child(
@@ -1946,84 +1821,46 @@ impl KeyzenApp {
                                                 div()
                                                     .flex()
                                                     .gap_2()
-                                                    .child(
+                                                    .child({
                                                         // 深色主题按钮
-                                                        div()
-                                                            .px_4()
-                                                            .py_2()
-                                                            .bg(if is_dark {
-                                                                colors.accent
-                                                            } else {
-                                                                colors.bg_primary
-                                                            })
-                                                            .when(!is_dark, |el| {
-                                                                el.hover(|style| style.bg(colors.bg_hover))
-                                                            })
-                                                            .rounded(px(6.0))
-                                                            .cursor_pointer()
-                                                            .on_mouse_down(
-                                                                MouseButton::Left,
-                                                                cx.listener(|this, _event, _window, cx| {
-                                                                    if this.current_theme != Theme::Dark {
-                                                                        this.current_theme = Theme::Dark;
-                                                                        // 保存主题配置
-                                                                        if let Err(e) = this.database.save_config("theme", "dark") {
-                                                                            eprintln!("保存主题配置失败: {}", e);
-                                                                        }
-                                                                        cx.notify();
+                                                        let mut btn = Button::new("theme-dark-btn")
+                                                            .label("深色")
+                                                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                                                if this.current_theme != Theme::Dark {
+                                                                    this.current_theme = Theme::Dark;
+                                                                    if let Err(e) = this.database.save_config("theme", "dark") {
+                                                                        eprintln!("保存主题配置失败: {}", e);
                                                                     }
-                                                                }),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_size(px(14.0))
-                                                                    .text_color(if is_dark {
-                                                                        rgb(0x000000) // 深色主题选中时黑色文字
-                                                                    } else {
-                                                                        colors.text_secondary.into()
-                                                                    })
-                                                                    .child("深色"),
-                                                            ),
-                                                    )
-                                                    .child(
+                                                                    cx.notify();
+                                                                }
+                                                            }));
+                                                        if is_dark {
+                                                            btn = btn.primary();
+                                                        } else {
+                                                            btn = btn.ghost();
+                                                        }
+                                                        btn
+                                                    })
+                                                    .child({
                                                         // 浅色主题按钮
-                                                        div()
-                                                            .px_4()
-                                                            .py_2()
-                                                            .bg(if !is_dark {
-                                                                colors.accent
-                                                            } else {
-                                                                colors.bg_primary
-                                                            })
-                                                            .when(is_dark, |el| {
-                                                                el.hover(|style| style.bg(colors.bg_hover))
-                                                            })
-                                                            .rounded(px(6.0))
-                                                            .cursor_pointer()
-                                                            .on_mouse_down(
-                                                                MouseButton::Left,
-                                                                cx.listener(|this, _event, _window, cx| {
-                                                                    if this.current_theme != Theme::Light {
-                                                                        this.current_theme = Theme::Light;
-                                                                        // 保存主题配置
-                                                                        if let Err(e) = this.database.save_config("theme", "light") {
-                                                                            eprintln!("保存主题配置失败: {}", e);
-                                                                        }
-                                                                        cx.notify();
+                                                        let mut btn = Button::new("theme-light-btn")
+                                                            .label("浅色")
+                                                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                                                if this.current_theme != Theme::Light {
+                                                                    this.current_theme = Theme::Light;
+                                                                    if let Err(e) = this.database.save_config("theme", "light") {
+                                                                        eprintln!("保存主题配置失败: {}", e);
                                                                     }
-                                                                }),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_size(px(14.0))
-                                                                    .text_color(if !is_dark {
-                                                                        rgb(0xFFFFFF) // 浅色主题选中时白色文字
-                                                                    } else {
-                                                                        colors.text_secondary.into()
-                                                                    })
-                                                                    .child("浅色"),
-                                                            ),
-                                                    ),
+                                                                    cx.notify();
+                                                                }
+                                                            }));
+                                                        if !is_dark {
+                                                            btn = btn.primary();
+                                                        } else {
+                                                            btn = btn.ghost();
+                                                        }
+                                                        btn
+                                                    }),
                                             ),
                                     ),
                             ),
@@ -2300,6 +2137,9 @@ fn main() {
     debug!("🚀 Keyzen GUI 启动");
 
     Application::new().run(|cx: &mut App| {
+        // 初始化 gpui-component
+        gpui_component::init(cx);
+
         // 绑定快捷键
         cx.bind_keys([
             KeyBinding::new("escape", BackToList, Some("KeyzenApp")),
